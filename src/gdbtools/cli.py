@@ -7,9 +7,9 @@ from typing import Dict, List
 from .collector import collect_privileges, collect_schema_snapshot, remap_privilege_bundles, resolve_schemas, resolve_users
 from .config import CompareOptions, parse_connection_dsn, parse_target_dsns
 from .diffing import diff_privileges, diff_schema, map_schema_pairs
-from .models import ComparisonReport, SchemaSnapshot, TargetComparison
+from .models import ComparisonSummary, PrivilegeDiff, SchemaSnapshot, TargetComparison
 from .mysql_client import build_client
-from .reporting import render_report
+from .reporting import render_summary_report, render_target_report
 from .utils import split_multi_value
 
 
@@ -88,6 +88,8 @@ def parse_args(argv: List[str]) -> CompareOptions:
 
 def main(argv: List[str] | None = None) -> int:
     options = parse_args(argv or sys.argv[1:])
+    if options.output_format == "text":
+        print(f"Source: {options.source.display_name}", flush=True)
 
     source_client = build_client(options.source)
     target_clients = [build_client(target) for target in options.targets]
@@ -103,55 +105,92 @@ def main(argv: List[str] | None = None) -> int:
 
     comparisons: List[TargetComparison] = []
     for target, target_client in zip(options.targets, target_clients):
-        target_available_schemas = resolve_schemas(target_client, [], options.exclude_schemas)
-        target_selected_schemas = resolve_schemas(target_client, options.target_schemas, options.exclude_schemas)
-        if not options.target_schemas:
-            target_selected_schemas = target_available_schemas
+        try:
+            target_available_schemas = resolve_schemas(target_client, [], options.exclude_schemas)
+            target_selected_schemas = resolve_schemas(target_client, options.target_schemas, options.exclude_schemas)
+            if not options.target_schemas:
+                target_selected_schemas = target_available_schemas
 
-        schema_pairs = map_schema_pairs(
-            source_available=source_available_schemas,
-            source_selected=source_selected_schemas,
-            source_selectors=options.source_schemas,
-            target_available=target_available_schemas,
-            target_selected=target_selected_schemas,
-            target_selectors=options.target_schemas,
-        )
+            schema_pairs = map_schema_pairs(
+                source_available=source_available_schemas,
+                source_selected=source_selected_schemas,
+                source_selectors=options.source_schemas,
+                target_available=target_available_schemas,
+                target_selected=target_selected_schemas,
+                target_selectors=options.target_schemas,
+            )
 
-        schema_diffs = []
-        if options.compare_structure:
-            target_schema_cache: Dict[str, SchemaSnapshot] = {}
-            for pair in schema_pairs:
-                if pair.source_schema not in source_schema_cache:
-                    source_schema_cache[pair.source_schema] = collect_schema_snapshot(source_client, pair.source_schema)
-                if pair.target_schema not in target_schema_cache:
-                    target_schema_cache[pair.target_schema] = collect_schema_snapshot(target_client, pair.target_schema)
-                schema_diff = diff_schema(source_schema_cache[pair.source_schema], target_schema_cache[pair.target_schema])
-                if schema_diff.has_changes():
-                    schema_diffs.append(schema_diff)
+            schema_diffs = []
+            if options.compare_structure:
+                target_schema_cache: Dict[str, SchemaSnapshot] = {}
+                for pair in schema_pairs:
+                    if pair.source_schema not in source_schema_cache:
+                        source_schema_cache[pair.source_schema] = collect_schema_snapshot(source_client, pair.source_schema)
+                    if pair.target_schema not in target_schema_cache:
+                        target_schema_cache[pair.target_schema] = collect_schema_snapshot(target_client, pair.target_schema)
+                    schema_diff = diff_schema(source_schema_cache[pair.source_schema], target_schema_cache[pair.target_schema])
+                    if schema_diff.has_changes():
+                        schema_diffs.append(schema_diff)
 
-        privilege_diff = diff_privileges({}, {})
-        if options.compare_privileges:
-            target_users = resolve_users(target_client, options.users, options.exclude_users)
-            source_scope = sorted({pair.source_schema for pair in schema_pairs})
-            target_scope = sorted({pair.target_schema for pair in schema_pairs})
-            source_privileges = collect_privileges(source_client, source_users, options.user_match_mode, source_scope)
-            target_privileges = collect_privileges(target_client, target_users, options.user_match_mode, target_scope)
-            if schema_pairs:
-                target_privileges = remap_privilege_bundles(
-                    target_privileges,
-                    {pair.target_schema: pair.source_schema for pair in schema_pairs},
-                )
-            privilege_diff = diff_privileges(source_privileges, target_privileges)
+            privilege_diff = PrivilegeDiff()
+            if options.compare_privileges:
+                target_users = resolve_users(target_client, options.users, options.exclude_users)
+                source_scope = sorted({pair.source_schema for pair in schema_pairs})
+                target_scope = sorted({pair.target_schema for pair in schema_pairs})
+                source_privileges = collect_privileges(source_client, source_users, options.user_match_mode, source_scope)
+                target_privileges = collect_privileges(target_client, target_users, options.user_match_mode, target_scope)
+                if schema_pairs:
+                    target_privileges = remap_privilege_bundles(
+                        target_privileges,
+                        {pair.target_schema: pair.source_schema for pair in schema_pairs},
+                    )
+                privilege_diff = diff_privileges(source_privileges, target_privileges)
 
-        comparisons.append(
-            TargetComparison(
+            comparison = TargetComparison(
                 target=target.display_name,
                 schema_pairs=schema_pairs,
                 schema_diffs=schema_diffs,
                 privilege_diff=privilege_diff,
             )
-        )
+        except Exception as exc:
+            comparison = TargetComparison(
+                target=target.display_name,
+                schema_pairs=[],
+                schema_diffs=[],
+                privilege_diff=PrivilegeDiff(),
+                error=str(exc),
+            )
 
-    report = ComparisonReport(source=options.source.display_name, comparisons=comparisons)
-    print(render_report(report, options.output_format))
+        comparisons.append(comparison)
+        print(render_target_report(comparison, options.output_format), flush=True)
+
+    summary = build_summary(comparisons)
+    if options.output_format == "json":
+        # Keep a complete final payload for machine consumption after streaming target-level results.
+        print(render_summary_report(summary, options.output_format), flush=True)
+    else:
+        print(render_summary_report(summary, options.output_format), flush=True)
+    return determine_exit_code(summary)
+
+
+def build_summary(comparisons: List[TargetComparison]) -> ComparisonSummary:
+    total_targets = len(comparisons)
+    failed_targets = sum(1 for comparison in comparisons if not comparison.is_successful())
+    successful_targets = total_targets - failed_targets
+    inconsistent_targets = sum(1 for comparison in comparisons if comparison.has_differences())
+    consistent_targets = successful_targets - inconsistent_targets
+    return ComparisonSummary(
+        total_targets=total_targets,
+        successful_targets=successful_targets,
+        failed_targets=failed_targets,
+        consistent_targets=consistent_targets,
+        inconsistent_targets=inconsistent_targets,
+    )
+
+
+def determine_exit_code(summary: ComparisonSummary) -> int:
+    if summary.failed_targets > 0:
+        return 2
+    if summary.inconsistent_targets > 0:
+        return 1
     return 0

@@ -170,12 +170,31 @@ class TargetComparison:
     schema_pairs: List[SchemaPair]
     schema_diffs: List[SchemaDiff]
     privilege_diff: PrivilegeDiff
+    error: Optional[str] = None
+
+    def is_successful(self) -> bool:
+        return self.error is None
+
+    def has_differences(self) -> bool:
+        if not self.is_successful():
+            return False
+        return bool(self.schema_diffs) or self.privilege_diff.has_changes()
+
+
+@dataclass(frozen=True)
+class ComparisonSummary:
+    total_targets: int
+    successful_targets: int
+    failed_targets: int
+    consistent_targets: int
+    inconsistent_targets: int
 
 
 @dataclass
 class ComparisonReport:
     source: str
     comparisons: List[TargetComparison]
+    summary: Optional[ComparisonSummary] = None
 
     def to_dict(self) -> Dict[str, object]:
         return {
@@ -183,6 +202,8 @@ class ComparisonReport:
             "comparisons": [
                 {
                     "target": comparison.target,
+                    "status": "failed" if comparison.error else "success",
+                    "error": comparison.error,
                     "schema_pairs": [asdict(pair) for pair in comparison.schema_pairs],
                     "schema_diffs": [
                         {
@@ -198,4 +219,5 @@ class ComparisonReport:
                 }
                 for comparison in self.comparisons
             ],
+            "summary": asdict(self.summary) if self.summary else None,
         }
