@@ -24,7 +24,7 @@ func splitMultiValue(values []string) []string {
 	if len(values) == 0 {
 		return items
 	}
-	re := regexp.MustCompile(`[,\|\n]+`)
+	re := regexp.MustCompile(`[,，;\|；\n]+`)
 	for _, raw := range values {
 		for _, item := range re.Split(raw, -1) {
 			trimmed := strings.TrimSpace(item)

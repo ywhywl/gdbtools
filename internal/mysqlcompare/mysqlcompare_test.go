@@ -110,6 +110,28 @@ func TestResolveUsersExcludeUserHostIgnoresHostInUserMode(t *testing.T) {
 	}
 }
 
+func TestResolveUsersExcludeMatchesCanonicalUserNames(t *testing.T) {
+	users, err := resolveUsers(
+		fakeDatabaseClient{rowsByQuery: map[string][]Row{
+			"\n\t\tSELECT User AS user, Host AS host\n\t\tFROM mysql.user\n\t\tORDER BY User, Host\n\t": {
+				{"user": "BackupAdmin", "host": "%"},
+				{"user": "ha_user", "host": "%"},
+				{"user": "_gdb_inner_role", "host": "%"},
+				{"user": "dbproxy", "host": "%"},
+			},
+		}},
+		nil,
+		[]string{"backupadmin;ha user;gdb inner role"},
+		"user",
+	)
+	if err != nil {
+		t.Fatalf("resolveUsers returned error: %v", err)
+	}
+	if len(users) != 1 || users[0][0] != "dbproxy" {
+		t.Fatalf("expected only dbproxy to remain, got %#v", users)
+	}
+}
+
 func TestDiffPrivilegesUserModeIgnoresHostDifferences(t *testing.T) {
 	source := ensureBundle(map[string]*PrivilegeBundle{}, "app", "%", "user")
 	source.GlobalPrivileges.Add("SELECT")
@@ -125,6 +147,13 @@ func TestDiffPrivilegesUserModeIgnoresHostDifferences(t *testing.T) {
 	)
 	if diff.HasChanges() {
 		t.Fatalf("host-only differences should be ignored in user mode: %#v", diff)
+	}
+}
+
+func TestSplitMultiValueSupportsSemicolon(t *testing.T) {
+	items := splitMultiValue([]string{"BackupAdmin;ReplicationAdmin，dbadmin；dbproxy"})
+	if len(items) != 4 {
+		t.Fatalf("unexpected split items: %#v", items)
 	}
 }
 

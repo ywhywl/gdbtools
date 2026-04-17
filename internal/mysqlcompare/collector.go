@@ -168,6 +168,9 @@ func collectSchemaSnapshot(client DatabaseClient, schemaName string) (SchemaSnap
 }
 
 func resolveUsers(client DatabaseClient, selectors, excludeSelectors []string, matchMode string) ([][2]string, error) {
+	selectors = splitMultiValue(selectors)
+	excludeSelectors = splitMultiValue(excludeSelectors)
+
 	rows, err := client.FetchRows(`
 		SELECT User AS user, Host AS host
 		FROM mysql.user
@@ -212,7 +215,7 @@ func resolveUsers(client DatabaseClient, selectors, excludeSelectors []string, m
 				continue
 			}
 			for userName, matchedIdentities := range userToIdentities {
-				if matchesSelector(userName, selector) {
+				if matchesUserSelector(userName, selector) {
 					for _, identity := range matchedIdentities {
 						selected[identity] = struct{}{}
 					}
@@ -242,7 +245,7 @@ func resolveUsers(client DatabaseClient, selectors, excludeSelectors []string, m
 			continue
 		}
 		for userName, matchedIdentities := range userToIdentities {
-			if matchesSelector(userName, selector) {
+			if matchesUserSelector(userName, selector) {
 				for _, identity := range matchedIdentities {
 					excluded[identity] = struct{}{}
 				}
@@ -488,4 +491,24 @@ func normalizeUserSelectors(selectors []string, matchMode string) []string {
 		}
 	}
 	return normalized
+}
+
+func matchesUserSelector(userName, selector string) bool {
+	if matchesSelector(userName, selector) {
+		return true
+	}
+	if strings.ContainsAny(selector, "%_") {
+		return false
+	}
+	return canonicalUserToken(userName) == canonicalUserToken(selector)
+}
+
+func canonicalUserToken(value string) string {
+	var builder strings.Builder
+	for _, char := range strings.ToLower(strings.TrimSpace(value)) {
+		if (char >= 'a' && char <= 'z') || (char >= '0' && char <= '9') {
+			builder.WriteRune(char)
+		}
+	}
+	return builder.String()
 }
