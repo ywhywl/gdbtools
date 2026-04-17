@@ -95,11 +95,14 @@ func TestRenderSchemaDiffLimitsDetails(t *testing.T) {
 	}
 	lines := renderSchemaDiff(diff)
 	rendered := strings.Join(lines, "\n")
-	if !strings.Contains(rendered, "table differences: total=101, showing_first=100") {
+	if !strings.Contains(rendered, "table differences: total=101, showing_first=20") {
 		t.Fatalf("missing limit header: %s", rendered)
 	}
-	if !strings.Contains(rendered, "omitted table detail count: 1") {
+	if !strings.Contains(rendered, "omitted table detail count: 81") {
 		t.Fatalf("missing omitted count: %s", rendered)
+	}
+	if !strings.Contains(rendered, "reason: table exists in source but is missing in target") {
+		t.Fatalf("missing reason detail: %s", rendered)
 	}
 }
 
@@ -110,11 +113,31 @@ func TestRenderPrivilegeDiffLimitsDetails(t *testing.T) {
 	}
 	lines := renderPrivilegeDiff(PrivilegeDiff{SourceOnlyIdentities: sourceOnly})
 	rendered := strings.Join(lines, "\n")
-	if !strings.Contains(rendered, "privilege differences: total=101, showing_first=100") {
+	if !strings.Contains(rendered, "privilege differences: total=101, showing_first=20") {
 		t.Fatalf("missing limit header: %s", rendered)
 	}
-	if !strings.Contains(rendered, "omitted privilege detail count: 1") {
+	if !strings.Contains(rendered, "omitted privilege detail count: 81") {
 		t.Fatalf("missing omitted count: %s", rendered)
+	}
+}
+
+func TestRenderTableDiffShowsReasonAndValues(t *testing.T) {
+	lines := renderTableDiff(TableDiff{
+		Table: "orders",
+		ChangedColumns: []map[string]any{
+			{
+				"column": "status",
+				"source": map[string]any{"column_type": "varchar(32)", "is_nullable": false},
+				"target": map[string]any{"column_type": "varchar(16)", "is_nullable": true},
+			},
+		},
+	})
+	rendered := strings.Join(lines, "\n")
+	if !strings.Contains(rendered, "reason: column definition is different between source and target") {
+		t.Fatalf("missing column change reason: %s", rendered)
+	}
+	if !strings.Contains(rendered, `"column_type":"varchar(32)"`) || !strings.Contains(rendered, `"column_type":"varchar(16)"`) {
+		t.Fatalf("missing source/target values: %s", rendered)
 	}
 }
 

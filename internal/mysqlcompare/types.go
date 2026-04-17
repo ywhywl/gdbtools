@@ -2,7 +2,7 @@ package mysqlcompare
 
 import "sort"
 
-const diffDetailLimit = 100
+const diffDetailLimit = 20
 
 type ConnectionConfig struct {
 	DSN      string

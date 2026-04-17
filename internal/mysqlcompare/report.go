@@ -101,10 +101,16 @@ func renderSchemaDiff(schemaDiff SchemaDiff) []string {
 
 	detailBlocks := [][]string{}
 	for _, tableName := range schemaDiff.SourceOnlyTables {
-		detailBlocks = append(detailBlocks, []string{"      source only table: " + tableName})
+		detailBlocks = append(detailBlocks, []string{
+			"      source only table: " + tableName,
+			"        reason: table exists in source but is missing in target",
+		})
 	}
 	for _, tableName := range schemaDiff.TargetOnlyTables {
-		detailBlocks = append(detailBlocks, []string{"      target only table: " + tableName})
+		detailBlocks = append(detailBlocks, []string{
+			"      target only table: " + tableName,
+			"        reason: table exists in target but is missing in source",
+		})
 	}
 	for _, tableDiff := range schemaDiff.ChangedTables {
 		detailBlocks = append(detailBlocks, renderTableDiff(tableDiff))
@@ -122,25 +128,54 @@ func renderTableDiff(tableDiff TableDiff) []string {
 	lines := []string{"      table: " + tableDiff.Table}
 	for _, option := range mapKeys(tableDiff.ChangedTableOptions) {
 		values := tableDiff.ChangedTableOptions[option]
-		lines = append(lines, "        option "+option+": source="+toString(values["source"])+" target="+toString(values["target"]))
+		lines = append(lines,
+			"        option "+option+": source="+toString(values["source"])+" target="+toString(values["target"]),
+			"          reason: table option definition is different between source and target",
+		)
 	}
 	for _, column := range tableDiff.SourceOnlyColumns {
-		lines = append(lines, "        source only column: "+toString(column["name"]))
+		lines = append(lines,
+			"        source only column: "+toString(column["name"]),
+			"          reason: column exists in source but is missing in target",
+		)
 	}
 	for _, column := range tableDiff.TargetOnlyColumns {
-		lines = append(lines, "        target only column: "+toString(column["name"]))
+		lines = append(lines,
+			"        target only column: "+toString(column["name"]),
+			"          reason: column exists in target but is missing in source",
+		)
 	}
 	for _, column := range tableDiff.ChangedColumns {
-		lines = append(lines, "        changed column: "+toString(column["column"]))
+		sourcePayload, _ := json.Marshal(column["source"])
+		targetPayload, _ := json.Marshal(column["target"])
+		lines = append(lines,
+			"        changed column: "+toString(column["column"]),
+			"          reason: column definition is different between source and target",
+			"          source="+string(sourcePayload),
+			"          target="+string(targetPayload),
+		)
 	}
 	for _, index := range tableDiff.SourceOnlyIndexes {
-		lines = append(lines, "        source only index: "+toString(index["name"]))
+		lines = append(lines,
+			"        source only index: "+toString(index["name"]),
+			"          reason: index exists in source but is missing in target",
+		)
 	}
 	for _, index := range tableDiff.TargetOnlyIndexes {
-		lines = append(lines, "        target only index: "+toString(index["name"]))
+		lines = append(lines,
+			"        target only index: "+toString(index["name"]),
+			"          reason: index exists in target but is missing in source",
+		)
 	}
 	for _, index := range tableDiff.ChangedIndexes {
-		lines = append(lines, "        changed index: "+toString(index["index"]))
+		sourcePayload, _ := json.Marshal(index["source"])
+		targetPayload, _ := json.Marshal(index["target"])
+		lines = append(lines,
+			"        changed index: "+toString(index["index"]),
+			"          reason: index definition is different between source and target",
+			"          source="+string(sourcePayload),
+			"          target="+string(targetPayload),
+		)
 	}
 	return lines
 }
