@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 
-from __future__ import annotations
-
 import argparse
 import json
 import os
@@ -10,9 +8,80 @@ import shutil
 import subprocess
 import sys
 from abc import ABC, abstractmethod
-from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 from urllib.parse import unquote, urlparse
+
+try:
+    from dataclasses import asdict, dataclass, field
+except ImportError:  # pragma: no cover
+    _MISSING = object()
+
+    class _FieldSpec(object):
+        def __init__(self, default=_MISSING, default_factory=_MISSING):
+            self.default = default
+            self.default_factory = default_factory
+
+    def field(default=_MISSING, default_factory=_MISSING):
+        if default is not _MISSING and default_factory is not _MISSING:
+            raise ValueError("cannot specify both default and default_factory")
+        return _FieldSpec(default=default, default_factory=default_factory)
+
+    def dataclass(_cls=None, **kwargs):
+        def wrap(cls):
+            annotations = getattr(cls, "__annotations__", {})
+            field_names = []
+            defaults = {}
+            factories = {}
+
+            for name in annotations:
+                field_names.append(name)
+                value = getattr(cls, name, _MISSING)
+                if isinstance(value, _FieldSpec):
+                    if value.default is not _MISSING:
+                        defaults[name] = value.default
+                        setattr(cls, name, value.default)
+                    elif value.default_factory is not _MISSING:
+                        factories[name] = value.default_factory
+                        if hasattr(cls, name):
+                            delattr(cls, name)
+                elif value is not _MISSING:
+                    defaults[name] = value
+
+            def __init__(self, *args, **init_kwargs):
+                if len(args) > len(field_names):
+                    raise TypeError("expected at most %d positional arguments" % len(field_names))
+                for index, name in enumerate(field_names):
+                    if index < len(args):
+                        value = args[index]
+                    elif name in init_kwargs:
+                        value = init_kwargs.pop(name)
+                    elif name in factories:
+                        value = factories[name]()
+                    elif name in defaults:
+                        value = defaults[name]
+                    else:
+                        raise TypeError("missing required argument: %s" % name)
+                    setattr(self, name, value)
+                if init_kwargs:
+                    unexpected = ", ".join(sorted(init_kwargs))
+                    raise TypeError("unexpected keyword arguments: %s" % unexpected)
+
+            cls.__init__ = __init__
+            cls.__dataclass_fields__ = tuple(field_names)
+            return cls
+
+        if _cls is None:
+            return wrap
+        return wrap(_cls)
+
+    def asdict(obj):
+        if hasattr(obj, "__dataclass_fields__"):
+            return {name: asdict(getattr(obj, name)) for name in obj.__dataclass_fields__}
+        if isinstance(obj, dict):
+            return {key: asdict(value) for key, value in obj.items()}
+        if isinstance(obj, (list, tuple)):
+            return [asdict(value) for value in obj]
+        return obj
 
 try:
     import pymysql
@@ -205,6 +274,8 @@ class TargetComparison:
     schema_pairs: List[SchemaPair]
     schema_diffs: List[SchemaDiff]
     privilege_diff: PrivilegeDiff
+    include_structure: bool = True
+    include_privileges: bool = True
     error: Optional[str] = None
 
     def is_successful(self) -> bool:
@@ -225,7 +296,7 @@ class ComparisonSummary:
     inconsistent_targets: int
 
 
-def split_multi_value(values: Sequence[str] | None) -> List[str]:
+def split_multi_value(values: Optional[Sequence[str]]) -> List[str]:
     items: List[str] = []
     if not values:
         return items
@@ -969,7 +1040,14 @@ def serialize_target_comparison(comparison: TargetComparison) -> Dict[str, objec
     payload = asdict(comparison)
     payload["status"] = "failed" if comparison.error else "success"
     payload["has_differences"] = comparison.has_differences()
-    payload["schema_diffs"] = [serialize_schema_diff(schema_diff) for schema_diff in comparison.schema_diffs]
+    if comparison.include_structure:
+        payload["schema_diffs"] = [serialize_schema_diff(schema_diff) for schema_diff in comparison.schema_diffs]
+        payload["schema_pairs"] = [asdict(pair) for pair in comparison.schema_pairs]
+    else:
+        payload.pop("schema_diffs", None)
+        payload.pop("schema_pairs", None)
+    if not comparison.include_privileges:
+        payload.pop("privilege_diff", None)
     return payload
 
 
@@ -999,37 +1077,39 @@ def render_text_target(comparison: TargetComparison) -> List[str]:
         return lines
 
     lines.append(f"  Status: {'inconsistent' if comparison.has_differences() else 'consistent'}")
-    if not comparison.schema_pairs:
-        lines.append("  Schema pairs: none")
-    else:
-        lines.append("  Schema pairs:")
-        for pair in comparison.schema_pairs:
-            lines.append(f"    - {pair.source_schema} -> {pair.target_schema}")
+    if comparison.include_structure:
+        if not comparison.schema_pairs:
+            lines.append("  Schema pairs: none")
+        else:
+            lines.append("  Schema pairs:")
+            for pair in comparison.schema_pairs:
+                lines.append(f"    - {pair.source_schema} -> {pair.target_schema}")
 
-    if not comparison.schema_diffs:
-        lines.append("  Structure diff: no differences")
-    else:
-        lines.append("  Structure diff:")
-        for schema_diff in comparison.schema_diffs:
-            lines.extend(render_schema_diff(schema_diff))
+        if not comparison.schema_diffs:
+            lines.append("  Structure diff: no differences")
+        else:
+            lines.append("  Structure diff:")
+            for schema_diff in comparison.schema_diffs:
+                lines.extend(render_schema_diff(schema_diff))
 
-    privilege_diff = comparison.privilege_diff
-    if not privilege_diff.has_changes():
-        lines.append("  Privilege diff: no differences")
-    else:
-        lines.append("  Privilege diff:")
-        if privilege_diff.source_only_identities:
-            lines.append("    Source only identities:")
-            for identity in privilege_diff.source_only_identities:
-                lines.append(f"      - {identity['identity']}")
-        if privilege_diff.target_only_identities:
-            lines.append("    Target only identities:")
-            for identity in privilege_diff.target_only_identities:
-                lines.append(f"      - {identity['identity']}")
-        if privilege_diff.changed_identities:
-            lines.append("    Changed identities:")
-            for item in privilege_diff.changed_identities:
-                lines.append(f"      - {item['identity']}")
+    if comparison.include_privileges:
+        privilege_diff = comparison.privilege_diff
+        if not privilege_diff.has_changes():
+            lines.append("  Privilege diff: no differences")
+        else:
+            lines.append("  Privilege diff:")
+            if privilege_diff.source_only_identities:
+                lines.append("    Source only identities:")
+                for identity in privilege_diff.source_only_identities:
+                    lines.append(f"      - {identity['identity']}")
+            if privilege_diff.target_only_identities:
+                lines.append("    Target only identities:")
+                for identity in privilege_diff.target_only_identities:
+                    lines.append(f"      - {identity['identity']}")
+            if privilege_diff.changed_identities:
+                lines.append("    Changed identities:")
+                for item in privilege_diff.changed_identities:
+                    lines.append(f"      - {item['identity']}")
     return lines
 
 
@@ -1242,6 +1322,8 @@ def main(argv: Optional[List[str]] = None, mode: str = "schema") -> int:
                 schema_pairs=schema_pairs,
                 schema_diffs=schema_diffs,
                 privilege_diff=privilege_diff,
+                include_structure=options.compare_structure,
+                include_privileges=options.compare_privileges,
             )
         except Exception as exc:
             comparison = TargetComparison(
@@ -1249,6 +1331,8 @@ def main(argv: Optional[List[str]] = None, mode: str = "schema") -> int:
                 schema_pairs=[],
                 schema_diffs=[],
                 privilege_diff=PrivilegeDiff(),
+                include_structure=options.compare_structure,
+                include_privileges=options.compare_privileges,
                 error=str(exc),
             )
 
