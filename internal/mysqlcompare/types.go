@@ -156,13 +156,16 @@ func (b *PrivilegeBundle) ToMap() map[string]any {
 	for scope, privileges := range b.TablePrivileges {
 		tablePrivileges[scope.Schema+"."+scope.Table] = privileges.Sorted()
 	}
-	return map[string]any{
+	payload := map[string]any{
 		"identity":          b.Identity.DisplayName(),
-		"hosts":             b.Hosts.Sorted(),
 		"global_privileges": b.GlobalPrivileges.Sorted(),
 		"db_privileges":     dbPrivileges,
 		"table_privileges":  tablePrivileges,
 	}
+	if b.Identity.Host != nil {
+		payload["hosts"] = b.Hosts.Sorted()
+	}
+	return payload
 }
 
 type SchemaPair struct {

@@ -197,8 +197,16 @@ func normalizeExtra(extra string) string {
 	if extra == "" {
 		return ""
 	}
-	re := regexp.MustCompile(`(?i)\bauto_increment\b`)
+	re := regexp.MustCompile(`(?i)\b(auto_increment|default_generated)\b`)
 	return normalizeWhitespace(re.ReplaceAllString(extra, ""))
+}
+
+func normalizeColumnType(columnType string) string {
+	if columnType == "" {
+		return ""
+	}
+	re := regexp.MustCompile(`(?i)\b(tinyint|smallint|mediumint|int|integer|bigint)\s*\(\s*\d+\s*\)`)
+	return normalizeWhitespace(strings.ToLower(re.ReplaceAllString(columnType, "$1")))
 }
 
 func privilegeNameFromColumn(columnName string) string {

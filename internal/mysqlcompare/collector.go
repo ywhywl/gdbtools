@@ -93,7 +93,7 @@ func collectSchemaSnapshot(client DatabaseClient, schemaName string) (SchemaSnap
 		columnsByTable[row["table_name"]] = append(columnsByTable[row["table_name"]], ColumnMeta{
 			OrdinalPosition:  mustAtoi(row["ordinal_position"]),
 			Name:             row["column_name"],
-			ColumnType:       row["column_type"],
+			ColumnType:       normalizeColumnType(row["column_type"]),
 			IsNullable:       row["is_nullable"] == "YES",
 			ColumnDefault:    parseNullableString(row["column_default"]),
 			Extra:            normalizeExtra(row["extra"]),
@@ -167,7 +167,7 @@ func collectSchemaSnapshot(client DatabaseClient, schemaName string) (SchemaSnap
 	return SchemaSnapshot{Name: schemaName, Tables: tables}, nil
 }
 
-func resolveUsers(client DatabaseClient, selectors, excludeSelectors []string) ([][2]string, error) {
+func resolveUsers(client DatabaseClient, selectors, excludeSelectors []string, matchMode string) ([][2]string, error) {
 	rows, err := client.FetchRows(`
 		SELECT User AS user, Host AS host
 		FROM mysql.user
@@ -183,6 +183,8 @@ func resolveUsers(client DatabaseClient, selectors, excludeSelectors []string) (
 		identities = append(identities, identity)
 		userToIdentities[row["user"]] = append(userToIdentities[row["user"]], identity)
 	}
+	selectors = normalizeUserSelectors(selectors, matchMode)
+	excludeSelectors = normalizeUserSelectors(excludeSelectors, matchMode)
 
 	selected := map[string]struct{}{}
 	if len(selectors) == 0 {
@@ -466,4 +468,24 @@ func remapPrivilegeBundles(bundles map[string]*PrivilegeBundle, schemaNameMap ma
 func hasIdentity(identities map[string]struct{}, user, host string) bool {
 	_, found := identities[user+"@"+host]
 	return found
+}
+
+func normalizeUserSelectors(selectors []string, matchMode string) []string {
+	if matchMode != "user" {
+		return selectors
+	}
+	normalized := make([]string, 0, len(selectors))
+	for _, selector := range selectors {
+		trimmed := strings.TrimSpace(selector)
+		if trimmed == "" {
+			continue
+		}
+		if user, _, found := strings.Cut(trimmed, "@"); found {
+			trimmed = strings.TrimSpace(user)
+		}
+		if trimmed != "" {
+			normalized = append(normalized, trimmed)
+		}
+	}
+	return normalized
 }

@@ -81,9 +81,50 @@ func TestEnsureBundleUserModeMergesHosts(t *testing.T) {
 		t.Fatalf("expected 1 merged bundle, got %d", len(bundles))
 	}
 	payload := bundles["app"].ToMap()
-	hosts := payload["hosts"].([]string)
-	if len(hosts) != 2 {
-		t.Fatalf("expected merged hosts, got %#v", payload)
+	if _, found := payload["hosts"]; found {
+		t.Fatalf("user mode should not expose hosts in diff payload: %#v", payload)
+	}
+	if len(bundles["app"].Hosts.Sorted()) != 2 {
+		t.Fatalf("expected merged hosts in bundle, got %#v", bundles["app"].Hosts.Sorted())
+	}
+}
+
+func TestResolveUsersExcludeUserHostIgnoresHostInUserMode(t *testing.T) {
+	users, err := resolveUsers(
+		fakeDatabaseClient{rowsByQuery: map[string][]Row{
+			"\n\t\tSELECT User AS user, Host AS host\n\t\tFROM mysql.user\n\t\tORDER BY User, Host\n\t": {
+				{"user": "app", "host": "%"},
+				{"user": "app", "host": "10.%"},
+				{"user": "other", "host": "%"},
+			},
+		}},
+		nil,
+		[]string{"app@%"},
+		"user",
+	)
+	if err != nil {
+		t.Fatalf("resolveUsers returned error: %v", err)
+	}
+	if len(users) != 1 || users[0][0] != "other" {
+		t.Fatalf("expected only other user to remain, got %#v", users)
+	}
+}
+
+func TestDiffPrivilegesUserModeIgnoresHostDifferences(t *testing.T) {
+	source := ensureBundle(map[string]*PrivilegeBundle{}, "app", "%", "user")
+	source.GlobalPrivileges.Add("SELECT")
+	source.Hosts.Add("%")
+
+	target := ensureBundle(map[string]*PrivilegeBundle{}, "app", "10.%", "user")
+	target.GlobalPrivileges.Add("SELECT")
+	target.Hosts.Add("10.%")
+
+	diff := diffPrivileges(
+		map[string]*PrivilegeBundle{"app": source},
+		map[string]*PrivilegeBundle{"app": target},
+	)
+	if diff.HasChanges() {
+		t.Fatalf("host-only differences should be ignored in user mode: %#v", diff)
 	}
 }
 
@@ -179,6 +220,104 @@ func TestRenderTableDiffShowsReasonAndValues(t *testing.T) {
 	}
 }
 
+func TestDiffSchemaIgnoresIntegerDisplayWidth(t *testing.T) {
+	source := SchemaSnapshot{
+		Name: "src",
+		Tables: map[string]TableMeta{
+			"orders": {
+				Name: "orders",
+				Columns: []ColumnMeta{
+					{
+						OrdinalPosition: 1,
+						Name:            "id",
+						ColumnType:      normalizeColumnType("bigint"),
+						IsNullable:      false,
+						Extra:           normalizeExtra(""),
+					},
+					{
+						OrdinalPosition: 2,
+						Name:            "status",
+						ColumnType:      normalizeColumnType("int"),
+						IsNullable:      false,
+						Extra:           normalizeExtra(""),
+					},
+				},
+			},
+		},
+	}
+	target := SchemaSnapshot{
+		Name: "tgt",
+		Tables: map[string]TableMeta{
+			"orders": {
+				Name: "orders",
+				Columns: []ColumnMeta{
+					{
+						OrdinalPosition: 1,
+						Name:            "id",
+						ColumnType:      normalizeColumnType("bigint(20)"),
+						IsNullable:      false,
+						Extra:           normalizeExtra(""),
+					},
+					{
+						OrdinalPosition: 2,
+						Name:            "status",
+						ColumnType:      normalizeColumnType("int(11)"),
+						IsNullable:      false,
+						Extra:           normalizeExtra(""),
+					},
+				},
+			},
+		},
+	}
+
+	diff := diffSchema(source, target)
+	if diff.HasChanges() {
+		t.Fatalf("integer display width should be ignored: %#v", diff)
+	}
+}
+
+func TestDiffSchemaIgnoresDefaultGeneratedInExtra(t *testing.T) {
+	source := SchemaSnapshot{
+		Name: "src",
+		Tables: map[string]TableMeta{
+			"orders": {
+				Name: "orders",
+				Columns: []ColumnMeta{
+					{
+						OrdinalPosition: 1,
+						Name:            "created_at",
+						ColumnType:      normalizeColumnType("timestamp"),
+						IsNullable:      false,
+						Extra:           normalizeExtra("DEFAULT_GENERATED"),
+					},
+				},
+			},
+		},
+	}
+	target := SchemaSnapshot{
+		Name: "tgt",
+		Tables: map[string]TableMeta{
+			"orders": {
+				Name: "orders",
+				Columns: []ColumnMeta{
+					{
+						OrdinalPosition: 1,
+						Name:            "created_at",
+						ColumnType:      normalizeColumnType("timestamp"),
+						IsNullable:      false,
+						Extra:           normalizeExtra(""),
+					},
+				},
+			},
+		},
+	}
+
+	diff := diffSchema(source, target)
+	if diff.HasChanges() {
+		t.Fatalf("default_generated should be ignored in extra: %#v", diff)
+	}
+}
+
 func TestRenderTextTargetHonorsCheckMode(t *testing.T) {
 	lines := renderTextTarget(TargetComparison{
 		Target:            "target_a",
@@ -259,4 +398,12 @@ func makeRangeTables(count int) []string {
 		items = append(items, "table_"+itoa(index))
 	}
 	return items
+}
+
+type fakeDatabaseClient struct {
+	rowsByQuery map[string][]Row
+}
+
+func (f fakeDatabaseClient) FetchRows(query string, params ...any) ([]Row, error) {
+	return f.rowsByQuery[query], nil
 }

@@ -56,7 +56,7 @@ func Run(argv []string) (int, error) {
 	}
 
 	sourceSchemaCache := map[string]SchemaSnapshot{}
-	sourceUsers, err := resolveUsers(sourceClient, options.Users, options.ExcludeUsers)
+	sourceUsers, err := resolveUsers(sourceClient, options.Users, options.ExcludeUsers, options.UserMatchMode)
 	if err != nil {
 		return 0, err
 	}
@@ -131,7 +131,7 @@ func Run(argv []string) (int, error) {
 		}
 
 		if comparison.Error == "" && options.ComparePrivileges {
-			targetUsers, err := resolveUsers(targetClient, options.Users, options.ExcludeUsers)
+			targetUsers, err := resolveUsers(targetClient, options.Users, options.ExcludeUsers, options.UserMatchMode)
 			if err != nil {
 				comparison.Error = err.Error()
 			} else {
