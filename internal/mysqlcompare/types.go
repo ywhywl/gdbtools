@@ -223,6 +223,7 @@ func (d PrivilegeDiff) DifferenceCount() int {
 
 type TargetComparison struct {
 	Target            string
+	TargetConfig      ConnectionConfig
 	SchemaPairs       []SchemaPair
 	SchemaDiffs       []SchemaDiff
 	PrivilegeDiff     PrivilegeDiff
@@ -242,10 +243,21 @@ func (c TargetComparison) HasDifferences() bool {
 	return len(c.SchemaDiffs) > 0 || c.PrivilegeDiff.HasChanges()
 }
 
+type TargetSummaryDetail struct {
+	Target          string   `json:"target"`
+	Host            string   `json:"host"`
+	Port            int      `json:"port"`
+	Database        string   `json:"database,omitempty"`
+	ComparedSchemas []string `json:"compared_schemas,omitempty"`
+	Error           string   `json:"error,omitempty"`
+}
+
 type ComparisonSummary struct {
 	TotalTargets        int
 	SuccessfulTargets   int
 	FailedTargets       int
 	ConsistentTargets   int
 	InconsistentTargets int
+	FailedTargetDetails []TargetSummaryDetail
+	InconsistentDetails []TargetSummaryDetail
 }

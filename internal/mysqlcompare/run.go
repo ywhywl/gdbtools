@@ -66,6 +66,7 @@ func Run(argv []string) (int, error) {
 		targetClient := targetClients[index]
 		comparison := TargetComparison{
 			Target:            target.DisplayName(),
+			TargetConfig:      target,
 			IncludeStructure:  options.CompareStructure,
 			IncludePrivileges: options.ComparePrivileges,
 		}
@@ -263,12 +264,16 @@ func buildSummary(comparisons []TargetComparison) ComparisonSummary {
 	totalTargets := len(comparisons)
 	failedTargets := 0
 	inconsistentTargets := 0
+	failedTargetDetails := []TargetSummaryDetail{}
+	inconsistentDetails := []TargetSummaryDetail{}
 	for _, comparison := range comparisons {
 		if !comparison.IsSuccessful() {
 			failedTargets++
+			failedTargetDetails = append(failedTargetDetails, buildTargetSummaryDetail(comparison))
 		}
 		if comparison.HasDifferences() {
 			inconsistentTargets++
+			inconsistentDetails = append(inconsistentDetails, buildTargetSummaryDetail(comparison))
 		}
 	}
 	successfulTargets := totalTargets - failedTargets
@@ -278,6 +283,23 @@ func buildSummary(comparisons []TargetComparison) ComparisonSummary {
 		FailedTargets:       failedTargets,
 		ConsistentTargets:   successfulTargets - inconsistentTargets,
 		InconsistentTargets: inconsistentTargets,
+		FailedTargetDetails: failedTargetDetails,
+		InconsistentDetails: inconsistentDetails,
+	}
+}
+
+func buildTargetSummaryDetail(comparison TargetComparison) TargetSummaryDetail {
+	comparedSchemas := []string{}
+	for _, pair := range comparison.SchemaPairs {
+		comparedSchemas = append(comparedSchemas, pair.SourceSchema+"->"+pair.TargetSchema)
+	}
+	return TargetSummaryDetail{
+		Target:          comparison.Target,
+		Host:            comparison.TargetConfig.Host,
+		Port:            comparison.TargetConfig.Port,
+		Database:        comparison.TargetConfig.Database,
+		ComparedSchemas: comparedSchemas,
+		Error:           comparison.Error,
 	}
 }
 

@@ -121,14 +121,49 @@ func TestRenderPrivilegeDiffLimitsDetails(t *testing.T) {
 	}
 }
 
+func TestRenderPrivilegeDiffShowsOnlyChangedFields(t *testing.T) {
+	lines := renderPrivilegeDiff(PrivilegeDiff{
+		ChangedIdentities: []map[string]any{
+			{
+				"identity": "cmp_priv_b@%",
+				"source": map[string]any{
+					"identity":          "cmp_priv_b@%",
+					"hosts":             []string{"%"},
+					"global_privileges": []string{},
+					"db_privileges":     map[string]any{},
+					"table_privileges": map[string]any{
+						"cmp_reason_src.orders": []string{"SELECT"},
+					},
+				},
+				"target": map[string]any{
+					"identity":          "cmp_priv_b@%",
+					"hosts":             []string{"%"},
+					"global_privileges": []string{},
+					"db_privileges":     map[string]any{},
+					"table_privileges": map[string]any{
+						"cmp_reason_src.orders": []string{"UPDATE"},
+					},
+				},
+			},
+		},
+	})
+	rendered := strings.Join(lines, "\n")
+	if !strings.Contains(rendered, `"table_privileges":{"cmp_reason_src.orders":["SELECT"]}`) {
+		t.Fatalf("missing changed privilege field: %s", rendered)
+	}
+	if strings.Contains(rendered, `"identity":"cmp_priv_b@%"`) || strings.Contains(rendered, `"hosts":["%"]`) {
+		t.Fatalf("unchanged privilege fields should not be shown: %s", rendered)
+	}
+}
+
 func TestRenderTableDiffShowsReasonAndValues(t *testing.T) {
 	lines := renderTableDiff(TableDiff{
 		Table: "orders",
 		ChangedColumns: []map[string]any{
 			{
 				"column": "status",
-				"source": map[string]any{"column_type": "varchar(32)", "is_nullable": false},
-				"target": map[string]any{"column_type": "varchar(16)", "is_nullable": true},
+				"source": map[string]any{"column_type": "varchar(32)", "is_nullable": false, "ordinal_position": 2},
+				"target": map[string]any{"column_type": "varchar(16)", "is_nullable": true, "ordinal_position": 2},
 			},
 		},
 	})
@@ -139,11 +174,15 @@ func TestRenderTableDiffShowsReasonAndValues(t *testing.T) {
 	if !strings.Contains(rendered, `"column_type":"varchar(32)"`) || !strings.Contains(rendered, `"column_type":"varchar(16)"`) {
 		t.Fatalf("missing source/target values: %s", rendered)
 	}
+	if strings.Contains(rendered, `"ordinal_position":2`) {
+		t.Fatalf("unchanged fields should not be shown: %s", rendered)
+	}
 }
 
 func TestRenderTextTargetHonorsCheckMode(t *testing.T) {
 	lines := renderTextTarget(TargetComparison{
 		Target:            "target_a",
+		TargetConfig:      ConnectionConfig{Host: "127.0.0.1", Port: 3306},
 		PrivilegeDiff:     PrivilegeDiff{},
 		IncludeStructure:  false,
 		IncludePrivileges: true,
@@ -154,6 +193,40 @@ func TestRenderTextTargetHonorsCheckMode(t *testing.T) {
 	}
 	if !strings.Contains(rendered, "Privilege diff: no differences") {
 		t.Fatalf("privilege block should be shown: %s", rendered)
+	}
+}
+
+func TestRenderTextSummaryShowsFailedAndInconsistentTargetDetails(t *testing.T) {
+	summary := buildSummary([]TargetComparison{
+		{
+			Target:            "root@10.0.0.11:3306",
+			TargetConfig:      ConnectionConfig{Host: "10.0.0.11", Port: 3306},
+			SchemaPairs:       []SchemaPair{{SourceSchema: "db_src", TargetSchema: "db_tgt"}},
+			PrivilegeDiff:     PrivilegeDiff{},
+			IncludeStructure:  true,
+			IncludePrivileges: true,
+			Error:             "connection failed",
+		},
+		{
+			Target:            "root@10.0.0.12:3307",
+			TargetConfig:      ConnectionConfig{Host: "10.0.0.12", Port: 3307},
+			SchemaPairs:       []SchemaPair{{SourceSchema: "db_a", TargetSchema: "db_b"}},
+			SchemaDiffs:       []SchemaDiff{{SourceSchema: "db_a", TargetSchema: "db_b", SourceOnlyTables: []string{"t1"}}},
+			PrivilegeDiff:     PrivilegeDiff{},
+			IncludeStructure:  true,
+			IncludePrivileges: true,
+		},
+	})
+
+	rendered := strings.Join(renderTextSummary(summary, 2), "\n")
+	if !strings.Contains(rendered, "Failed target details:") {
+		t.Fatalf("missing failed target details block: %s", rendered)
+	}
+	if !strings.Contains(rendered, "host=10.0.0.11") || !strings.Contains(rendered, "port=3306") {
+		t.Fatalf("missing failed target host/port: %s", rendered)
+	}
+	if !strings.Contains(rendered, "compared_schemas=db_a->db_b") {
+		t.Fatalf("missing inconsistent target schema info: %s", rendered)
 	}
 }
 

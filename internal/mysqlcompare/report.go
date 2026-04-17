@@ -80,7 +80,7 @@ func renderTextTarget(comparison TargetComparison) []string {
 }
 
 func renderTextSummary(summary ComparisonSummary, exitCode int) []string {
-	return []string{
+	lines := []string{
 		"Summary:",
 		"  Total targets: " + itoa(summary.TotalTargets),
 		"  Successful targets: " + itoa(summary.SuccessfulTargets),
@@ -89,6 +89,37 @@ func renderTextSummary(summary ComparisonSummary, exitCode int) []string {
 		"  Inconsistent targets: " + itoa(summary.InconsistentTargets),
 		"  Exit code: " + itoa(exitCode),
 	}
+	if len(summary.FailedTargetDetails) > 0 {
+		lines = append(lines, "  Failed target details:")
+		for _, detail := range summary.FailedTargetDetails {
+			lines = append(lines, renderTargetSummaryDetail("    - ", detail)...)
+		}
+	}
+	if len(summary.InconsistentDetails) > 0 {
+		lines = append(lines, "  Inconsistent target details:")
+		for _, detail := range summary.InconsistentDetails {
+			lines = append(lines, renderTargetSummaryDetail("    - ", detail)...)
+		}
+	}
+	return lines
+}
+
+func renderTargetSummaryDetail(prefix string, detail TargetSummaryDetail) []string {
+	parts := []string{
+		prefix + "target=" + detail.Target,
+		"      host=" + detail.Host,
+		"      port=" + itoa(detail.Port),
+	}
+	if detail.Database != "" {
+		parts = append(parts, "      database="+detail.Database)
+	}
+	if len(detail.ComparedSchemas) > 0 {
+		parts = append(parts, "      compared_schemas="+strings.Join(detail.ComparedSchemas, ","))
+	}
+	if detail.Error != "" {
+		parts = append(parts, "      error="+detail.Error)
+	}
+	return parts
 }
 
 func renderSchemaDiff(schemaDiff SchemaDiff) []string {
@@ -146,8 +177,9 @@ func renderTableDiff(tableDiff TableDiff) []string {
 		)
 	}
 	for _, column := range tableDiff.ChangedColumns {
-		sourcePayload, _ := json.Marshal(column["source"])
-		targetPayload, _ := json.Marshal(column["target"])
+		sourceDiff, targetDiff := diffPayloadFields(column["source"], column["target"])
+		sourcePayload, _ := json.Marshal(sourceDiff)
+		targetPayload, _ := json.Marshal(targetDiff)
 		lines = append(lines,
 			"        changed column: "+toString(column["column"]),
 			"          reason: column definition is different between source and target",
@@ -168,8 +200,9 @@ func renderTableDiff(tableDiff TableDiff) []string {
 		)
 	}
 	for _, index := range tableDiff.ChangedIndexes {
-		sourcePayload, _ := json.Marshal(index["source"])
-		targetPayload, _ := json.Marshal(index["target"])
+		sourceDiff, targetDiff := diffPayloadFields(index["source"], index["target"])
+		sourcePayload, _ := json.Marshal(sourceDiff)
+		targetPayload, _ := json.Marshal(targetDiff)
 		lines = append(lines,
 			"        changed index: "+toString(index["index"]),
 			"          reason: index definition is different between source and target",
@@ -191,8 +224,9 @@ func renderPrivilegeDiff(privilegeDiff PrivilegeDiff) []string {
 		entries = append(entries, []string{"    target only identity: " + toString(identity["identity"])})
 	}
 	for _, item := range privilegeDiff.ChangedIdentities {
-		sourcePayload, _ := json.Marshal(item["source"])
-		targetPayload, _ := json.Marshal(item["target"])
+		sourceDiff, targetDiff := diffPayloadFields(item["source"], item["target"])
+		sourcePayload, _ := json.Marshal(sourceDiff)
+		targetPayload, _ := json.Marshal(targetDiff)
 		entries = append(entries, []string{
 			"    changed identity: " + toString(item["identity"]),
 			"      source=" + string(sourcePayload),
@@ -227,4 +261,74 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func diffPayloadFields(source, target any) (map[string]any, map[string]any) {
+	sourceValue, targetValue, changed := diffPayloadValue(source, target)
+	if !changed {
+		return map[string]any{}, map[string]any{}
+	}
+
+	sourceMap, sourceOK := sourceValue.(map[string]any)
+	targetMap, targetOK := targetValue.(map[string]any)
+	if sourceOK && targetOK {
+		return sourceMap, targetMap
+	}
+	return map[string]any{"value": sourceValue}, map[string]any{"value": targetValue}
+}
+
+func diffPayloadValue(source, target any) (any, any, bool) {
+	sourceMap, sourceOK := source.(map[string]any)
+	targetMap, targetOK := target.(map[string]any)
+	if sourceOK && targetOK {
+		sourceDiff := map[string]any{}
+		targetDiff := map[string]any{}
+		for _, key := range unionKeys(sourceMap, targetMap) {
+			sourceValue, sourceFound := sourceMap[key]
+			targetValue, targetFound := targetMap[key]
+			if !sourceFound || !targetFound {
+				sourceDiff[key] = sourceValue
+				targetDiff[key] = targetValue
+				continue
+			}
+			left, right, changed := diffPayloadValue(sourceValue, targetValue)
+			if changed {
+				sourceDiff[key] = left
+				targetDiff[key] = right
+			}
+		}
+		if len(sourceDiff) == 0 && len(targetDiff) == 0 {
+			return nil, nil, false
+		}
+		return sourceDiff, targetDiff, true
+	}
+
+	if payloadValueEqual(source, target) {
+		return nil, nil, false
+	}
+	return source, target, true
+}
+
+func unionKeys(left, right map[string]any) []string {
+	keySet := map[string]struct{}{}
+	for key := range left {
+		keySet[key] = struct{}{}
+	}
+	for key := range right {
+		keySet[key] = struct{}{}
+	}
+	keys := make([]string, 0, len(keySet))
+	for key := range keySet {
+		keys = append(keys, key)
+	}
+	return uniqSorted(keys)
+}
+
+func payloadValueEqual(left, right any) bool {
+	leftJSON, leftErr := json.Marshal(left)
+	rightJSON, rightErr := json.Marshal(right)
+	if leftErr != nil || rightErr != nil {
+		return toString(left) == toString(right)
+	}
+	return string(leftJSON) == string(rightJSON)
 }
