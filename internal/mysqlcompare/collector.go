@@ -497,7 +497,7 @@ func matchesUserSelector(userName, selector string) bool {
 	if matchesSelector(userName, selector) {
 		return true
 	}
-	if strings.ContainsAny(selector, "%_") {
+	if strings.ContainsAny(selector, "*?[") {
 		return false
 	}
 	return canonicalUserToken(userName) == canonicalUserToken(selector)

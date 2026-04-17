@@ -38,8 +38,9 @@ Or use the Go CLI:
 - The tool prefers `PyMySQL` when installed.
 - If `PyMySQL` is not available, it falls back to the local `mysql` client.
 - The scripts are intended to run on Python 3.6 and later.
-- For wildcard matching, selectors use MySQL `LIKE` semantics.
+- For wildcard matching, selectors use Linux shell-style glob semantics such as `*`, `?`, and `[]`.
 - If a selector exactly matches an existing schema, database, or user, it is treated as an exact match first.
+- Old MySQL `LIKE` wildcards such as `%` and `_` are not treated as wildcards by the Go CLI.
 - `--default-user` and `--default-password` apply to `--source-dsn` and every `--target-dsn` entry.
 - A single `--target-dsn` value can contain multiple DSNs separated by `,`, `|`, or newlines.
 - The structure script is [scripts/mysql_schema_compare.py](/Users/wenlongy/dev/src/gdbtools/scripts/mysql_schema_compare.py).
@@ -88,9 +89,9 @@ go run ./cmd/mysqlcompare \
   --source-dsn '10.0.0.11' \
   --target-dsn $'10.0.0.12|10.0.0.13:3307' \
   --source-schemas 'dbname_0' \
-  --target-schemas 'dbname_%' \
+  --target-schemas 'dbname_*' \
   --exclude-schemas 'mysql,information_schema,performance_schema,sys' \
-  --users 'app_user,report_user@%' \
+  --users 'app_user,report_user@*' \
   --exclude-users 'mysql.session,mysql.sys' \
   --user-match-mode user \
   --check all \

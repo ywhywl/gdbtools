@@ -57,13 +57,28 @@ func TestMapSchemaPairsSourceExactTargetWildcard(t *testing.T) {
 		[]string{"dbname_0"},
 		[]string{"dbname_1", "dbname_2"},
 		[]string{"dbname_1", "dbname_2"},
-		[]string{"dbname_%"},
+		[]string{"dbname_*"},
 	)
 	if err != nil {
 		t.Fatalf("mapSchemaPairs returned error: %v", err)
 	}
 	if len(pairs) != 2 || pairs[0].SourceSchema != "dbname_0" || pairs[1].TargetSchema != "dbname_2" {
 		t.Fatalf("unexpected pairs: %#v", pairs)
+	}
+}
+
+func TestMatchesSelectorUsesLinuxGlob(t *testing.T) {
+	if !matchesSelector("dbname_01", "dbname_*") {
+		t.Fatalf("expected * glob to match")
+	}
+	if !matchesSelector("dbname_01", "dbname_0?") {
+		t.Fatalf("expected ? glob to match")
+	}
+	if !matchesSelector("db1", "db[0-9]") {
+		t.Fatalf("expected [] glob to match")
+	}
+	if matchesSelector("dbname_01", "dbname_%") {
+		t.Fatalf("mysql like wildcard should no longer match")
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"path"
 	"regexp"
 	"sort"
 	"strconv"
@@ -40,40 +41,12 @@ func normalizeWhitespace(value string) string {
 	return strings.Join(strings.Fields(value), " ")
 }
 
-func mysqlLikeToRegexp(pattern string) (*regexp.Regexp, error) {
-	var builder strings.Builder
-	builder.WriteString("^")
-	escape := false
-	for _, char := range pattern {
-		if escape {
-			builder.WriteString(regexp.QuoteMeta(string(char)))
-			escape = false
-			continue
-		}
-		switch char {
-		case '\\':
-			escape = true
-		case '%':
-			builder.WriteString(".*")
-		case '_':
-			builder.WriteString(".")
-		default:
-			builder.WriteString(regexp.QuoteMeta(string(char)))
-		}
-	}
-	if escape {
-		builder.WriteString(regexp.QuoteMeta(`\`))
-	}
-	builder.WriteString("$")
-	return regexp.Compile(builder.String())
-}
-
 func matchesSelector(name, selector string) bool {
-	re, err := mysqlLikeToRegexp(selector)
+	matched, err := path.Match(selector, name)
 	if err != nil {
 		return false
 	}
-	return re.MatchString(name)
+	return matched
 }
 
 func resolveSelectors(availableNames, selectors []string) []string {
