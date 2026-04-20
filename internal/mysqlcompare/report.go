@@ -222,8 +222,9 @@ func renderPrivilegeDiff(privilegeDiff PrivilegeDiff) []string {
 		entries = append(entries, []string{"    target only identity: " + toString(identity["identity"])})
 	}
 	for _, item := range privilegeDiff.ChangedIdentities {
-		sourcePayload, _ := json.Marshal(item["source"])
-		targetPayload, _ := json.Marshal(item["target"])
+		sourceDiff, targetDiff := diffPayloadFields(item["source"], item["target"])
+		sourcePayload, _ := json.Marshal(sourceDiff)
+		targetPayload, _ := json.Marshal(targetDiff)
 		entries = append(entries, []string{
 			"    changed identity: " + toString(item["identity"]),
 			"      source=" + string(sourcePayload),

@@ -165,48 +165,52 @@ func TestDiffPrivilegesUserModeIgnoresHostDifferences(t *testing.T) {
 	}
 }
 
-func TestDiffPrivilegesIgnoresAdditionalTargetPrivileges(t *testing.T) {
-	source := ensureBundle(map[string]*PrivilegeBundle{}, "app", "%", "user_host")
-	source.DBPrivileges["source_db"] = StringSet{}
-	source.DBPrivileges["source_db"].Add("SELECT")
+func TestDiffPrivilegesUserModeTreatsMappedSchemasAsEqual(t *testing.T) {
+	source := ensureBundle(map[string]*PrivilegeBundle{}, "user1", "ip1", "user")
+	source.Hosts.Add("ip1")
+	source.Hosts.Add("ip3")
+	source.DBPrivileges["db1"] = StringSet{}
+	source.DBPrivileges["db1"].Add("SELECT")
 
-	target := ensureBundle(map[string]*PrivilegeBundle{}, "app", "%", "user_host")
-	target.DBPrivileges["source_db"] = StringSet{}
-	target.DBPrivileges["source_db"].Add("SELECT")
-	target.DBPrivileges["source_db"].Add("UPDATE")
+	target := ensureBundle(map[string]*PrivilegeBundle{}, "user1", "ip4", "user")
+	target.Hosts.Add("ip4")
+	target.Hosts.Add("ip5")
+	target.DBPrivileges["db3"] = StringSet{}
+	target.DBPrivileges["db3"].Add("SELECT")
 
 	diff := diffPrivileges(
-		map[string]*PrivilegeBundle{"app@%": source},
-		map[string]*PrivilegeBundle{"app@%": target},
+		map[string]*PrivilegeBundle{"user1": source},
+		remapPrivilegeBundles(map[string]*PrivilegeBundle{"user1": target}, map[string]string{"db3": "db1"}),
 	)
 	if diff.HasChanges() {
-		t.Fatalf("additional target privileges should be ignored: %#v", diff)
+		t.Fatalf("mapped schemas with the same user privileges should be equal: %#v", diff)
 	}
 }
 
-func TestDiffPrivilegesReportsOnlyMissingPrivileges(t *testing.T) {
-	source := ensureBundle(map[string]*PrivilegeBundle{}, "app", "%", "user_host")
-	source.DBPrivileges["source_db"] = StringSet{}
-	source.DBPrivileges["source_db"].Add("SELECT")
-	source.DBPrivileges["source_db"].Add("UPDATE")
+func TestDiffPrivilegesUserModeReportsDifferentPrivilegesOnMappedSchemas(t *testing.T) {
+	source := ensureBundle(map[string]*PrivilegeBundle{}, "user1", "ip1", "user")
+	source.Hosts.Add("ip1")
+	source.DBPrivileges["db1"] = StringSet{}
+	source.DBPrivileges["db1"].Add("SELECT")
 
-	target := ensureBundle(map[string]*PrivilegeBundle{}, "app", "%", "user_host")
-	target.DBPrivileges["source_db"] = StringSet{}
-	target.DBPrivileges["source_db"].Add("SELECT")
+	target := ensureBundle(map[string]*PrivilegeBundle{}, "user1", "ip4", "user")
+	target.Hosts.Add("ip4")
+	target.DBPrivileges["db3"] = StringSet{}
+	target.DBPrivileges["db3"].Add("UPDATE")
 
 	diff := diffPrivileges(
-		map[string]*PrivilegeBundle{"app@%": source},
-		map[string]*PrivilegeBundle{"app@%": target},
+		map[string]*PrivilegeBundle{"user1": source},
+		remapPrivilegeBundles(map[string]*PrivilegeBundle{"user1": target}, map[string]string{"db3": "db1"}),
 	)
 	if len(diff.ChangedIdentities) != 1 {
 		t.Fatalf("expected one changed identity, got %#v", diff)
 	}
 	rendered := strings.Join(renderPrivilegeDiff(diff), "\n")
-	if !strings.Contains(rendered, `"db_privileges":{"source_db":["UPDATE"]}`) {
-		t.Fatalf("missing minimal db privilege diff: %s", rendered)
+	if !strings.Contains(rendered, `"db_privileges":{"db1":["SELECT"]}`) {
+		t.Fatalf("missing source privilege diff: %s", rendered)
 	}
-	if strings.Contains(rendered, "SELECT") {
-		t.Fatalf("existing target privileges should not be shown: %s", rendered)
+	if !strings.Contains(rendered, `"db_privileges":{"db1":["UPDATE"]}`) {
+		t.Fatalf("missing target privilege diff: %s", rendered)
 	}
 }
 
@@ -257,13 +261,21 @@ func TestRenderPrivilegeDiffShowsOnlyChangedFields(t *testing.T) {
 			{
 				"identity": "cmp_priv_b@%",
 				"source": map[string]any{
+					"identity":          "cmp_priv_b@%",
+					"hosts":             []string{"%"},
+					"global_privileges": []string{},
+					"db_privileges":     map[string]any{},
 					"table_privileges": map[string]any{
 						"cmp_reason_src.orders": []string{"SELECT"},
 					},
 				},
 				"target": map[string]any{
+					"identity":          "cmp_priv_b@%",
+					"hosts":             []string{"%"},
+					"global_privileges": []string{},
+					"db_privileges":     map[string]any{},
 					"table_privileges": map[string]any{
-						"cmp_reason_src.orders": []string{},
+						"cmp_reason_src.orders": []string{"UPDATE"},
 					},
 				},
 			},
