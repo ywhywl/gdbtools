@@ -1,0 +1,347 @@
+version: 1
+service:
+  name: ZXCLOUD GoldenDB Insight OpenAPI
+  source_document: ZXCLOUDGoldenDB分布式数据库通用rest接口操作指南.txt
+  auth:
+    type: header
+    headers:
+      username:
+        required: true
+        type: string
+        description: Insight 登录用户名
+      password:
+        required: true
+        type: string
+        encoding: base64
+        description: Insight 登录密码，需 base64 编码
+  common_response:
+    code:
+      type: integer
+      semantics:
+        1: success
+        2: failed
+        -1: auth_failed
+    msg:
+      type: string
+      description: 结果描述
+    data:
+      type: any
+      description: 具体业务结果
+    duration:
+      type: string
+      description: 接口耗时，通常为毫秒
+    operationId:
+      type: string
+      description: 请求操作 ID
+
+abstraction:
+  purpose:
+    - 将 GoldenDB Insight REST 文档抽象成可复用工具接口集
+    - 区分元数据发现、业务执行、异步任务查询三类能力
+    - 后续优先通过接口目录动态发现参数，再调用具体业务接口
+  recommended_layers:
+    - interface_catalog
+    - business_tools
+    - async_task_tracking
+  generic_tools:
+    - name: catalog_list_tree
+      based_on: "2.1"
+      description: 获取所有可见接口树，用于枚举能力域
+    - name: catalog_get_detail
+      based_on: "2.2"
+      description: 按节点 ID、名称或 URL 获取接口详情，包括请求示例和字段说明
+    - name: catalog_update_version
+      based_on: "2.3"
+      description: 切换指定接口默认版本
+    - name: api_invoke
+      description: 通用调用器，先通过 catalog_get_detail 获取元数据，再按 method/path 发起调用
+    - name: task_query
+      description: 异步任务统一查询入口模式，输入 taskId，调用对应 query 类接口
+
+common_parameters:
+  - {name: taskId, type: string, description: 异步任务 ID，用于查询进度或结果}
+  - {name: clusterId, type: string, description: 集群/租户实例 ID}
+  - {name: roomId, type: string, description: AZ 或机房 ID}
+  - {name: ip, type: string, description: 主机 IP，部分接口支持逗号分隔和区间表达}
+  - {name: pageNum, type: integer, description: 页码}
+  - {name: pageSize, type: integer, description: 每页大小}
+
+tool_groups:
+  - group: interface_catalog
+    section: "2"
+    tools:
+      - {name: rest_tree_list, section: "2.1", method: GET, path: "/open_api/insight/container/rest/tree", summary: "查询接口平面树"}
+      - {name: rest_info_get, section: "2.2", method: GET, path: "/open_api/insight/container/rest/info", summary: "查询接口平面详细信息"}
+      - {name: rest_version_update, section: "2.3", method: POST, path: "/open_api/insight/container/rest/update/version", summary: "更新接口默认版本"}
+
+  - group: host_management
+    section: "3"
+    tools:
+      - {name: host_batch_add_json, section: "3.1.1", method: POST, path: "/open_api/insight/external/host/batchAddhost", summary: "JSON 方式纳管主机", returns_task: true}
+      - {name: host_batch_add_excel, section: "3.1.2", method: POST, path: "/open_api/insight/external/host/batchAddhostExcel", summary: "Excel 方式纳管主机", returns_task: true}
+      - {name: host_batch_add_progress, section: "3.2", method: GET, path: "/open_api/insight/external/host/querybatchAddHostResult", summary: "查询纳管主机进度", query: ["taskId"]}
+      - {name: host_query, section: "3.3", method: GET, path: "/open_api/insight/external/host/queryHost", summary: "查询主机服务器信息"}
+
+  - group: parameter_template
+    section: "4"
+    tools:
+      - {name: template_sync, section: "4.1", method: POST, path: "/open_api/insight/external/syncTemplate", summary: "同步参数模板"}
+      - {name: template_sync_new, section: "4.2", method: POST, path: "/open_api/insight/external/syncTemplate_new", summary: "同步参数模板（新）"}
+      - {name: component_param_modify, section: "4.3", method: POST, path: "/open_api/insight/external/paramconfig/modifyParamConfig", summary: "修改组件配置参数"}
+      - {name: cluster_param_modify_new, section: "4.4", method: POST, path: "/open_api/insight/external/param/clusterParamConfigIssue", summary: "修改参数（新）", returns_task: true}
+      - {name: component_param_query, section: "4.5", method: POST, path: "/open_api/insight/external/param/queryParam", summary: "查询组件参数"}
+      - {name: tenant_param_modify, section: "4.6", method: POST, path: "/open_api/insight/external/cluster/modifyStronglyCorrelatedParameters", summary: "修改租户强关联参数", returns_task: true}
+      - {name: tenant_param_modify_result, section: "4.7", method: GET, path: "/open_api/insight/external/cluster/queryCorrelatedParameterResult", summary: "查询租户参数修改结果", query: ["taskId"]}
+
+  - group: tenancy_lifecycle
+    section: "5.1-5.4"
+    tools:
+      - {name: tenancy_create, section: "5.1.1", method: POST, path: "/open_api/insight/external/tenant/createCluster", summary: "新增租户实例", returns_task: true}
+      - {name: tenancy_create_progress, section: "5.1.2", method: GET, path: "/open_api/insight/external/tenant/getInstallClusterProcess", summary: "查询新增租户进度", query: ["taskId"]}
+      - {name: tenancy_create_retry, section: "5.1.3", method: POST, path: "/open_api/insight/external/tenant/createClusterRetry", summary: "新增集群重试", returns_task: true}
+      - {name: tenancy_create_plan, section: "5.1.4", method: POST, path: "/open_api/insight/external/tenant/createClusterPlan", summary: "新增集群预规划"}
+      - {name: tenancy_add_cn, section: "5.2.1", method: POST, path: "/open_api/insight/external/install/batchAddCN", summary: "新增 CN 组件", returns_task: true}
+      - {name: tenancy_add_dn, section: "5.2.2", method: POST, path: "/open_api/insight/external/install/batchAddSlaveDN", summary: "新增 DN 组件", returns_task: true}
+      - {name: tenancy_add_gtm, section: "5.2.3", method: POST, path: "/open_api/insight/external/tenant/batchAddGTM", summary: "新增 GTM 组件", returns_task: true}
+      - {name: tenancy_add_dn_group, section: "5.2.5", method: POST, path: "/open_api/insight/external/install/batchAddDBGroup", summary: "新增 DN 分片", returns_task: true}
+      - {name: tenancy_add_dn_group_progress, section: "5.2.6", method: GET, path: "/open_api/insight/external/install/querybatchAddDbgroupResult", summary: "查询新增 DN 分片进度", query: ["taskId"]}
+      - {name: tenancy_delete_node, section: "5.2.7", method: POST, path: "/open_api/insight/external/container/tenant/deleteNode", summary: "删除组件（CN/DN/GTM）", returns_task: true}
+      - {name: tenancy_delete_node_progress, section: "5.2.8", method: POST, path: "/open_api/insight/external/container/tenant/queryDeleteNodeResult", summary: "查询删除组件进度"}
+      - {name: tenancy_delete_dn_group, section: "5.2.9", method: POST, path: "/open_api/insight/external/common/tenant/delDbGroup", summary: "删除 DN 分片", returns_task: true}
+      - {name: tenancy_delete_dn_group_progress, section: "5.2.10", method: GET, path: "/open_api/insight/external/common/tenant/queryDeleteDBGroupResult", summary: "查询删除 DN 分片进度", query: ["taskId"]}
+      - {name: tenancy_add_outer_dn, section: "5.2.11", method: POST, path: "/open_api/insight/external/common/tenant/batchaddOuterDN", summary: "纳管外部 DN", returns_task: true}
+      - {name: tenancy_add_outer_dn_progress, section: "5.2.12", method: GET, path: "/open_api/insight/external/common/tenant/querybatchAddOuterDNResult", summary: "查询纳管外部 DN 进度", query: ["taskId"]}
+      - {name: tenancy_set_status, section: "5.3.1", method: POST, path: "/open_api/insight/external/tenant/setClusterStatus", summary: "设置集群禁用/启用"}
+      - {name: tenancy_delete, section: "5.3.2", method: POST, path: "/open_api/insight/external/tenant/deleteClusterById", summary: "删除集群（异步）", returns_task: true}
+      - {name: tenancy_delete_result, section: "5.3.3", method: GET, path: "/open_api/insight/external/tenant/queryDeleteClusterResult", summary: "查询删除集群结果", query: ["taskId"]}
+      - {name: tenancy_query_attr, section: "5.4.1", method: GET, path: "/open_api/insight/container/tenancy/searchTenancy", summary: "查询租户实例属性"}
+      - {name: tenancy_query_cn, section: "5.4.2", method: GET, path: "/open_api/insight/container/tenancy/searchCN", summary: "查询租户实例 CN 组件信息"}
+      - {name: tenancy_query_dn, section: "5.4.3", method: GET, path: "/open_api/insight/container/tenancy/searchDN", summary: "查询租户实例 DN 组件信息"}
+      - {name: tenancy_query_gtm, section: "5.4.4", method: GET, path: "/open_api/insight/container/tenancy/searchGTM", summary: "查询租户实例 GTM 组件信息"}
+      - {name: tenancy_query_dn_group_status, section: "5.4.5", method: GET, path: "/open_api/insight/external/tenancy/searchDNGroup", summary: "查询 DN 分片状态/水位/高可用信息"}
+      - {name: tenancy_query_gtm_group_status, section: "5.4.6", method: GET, path: "/open_api/insight/external/tenancy/searchGTMGroup", summary: "查询 GTM 分片水位状态"}
+      - {name: tenancy_query_drsp_relation, section: "5.4.7", method: GET, path: "/open_api/insight/external/tenant/getDRSPClusterInfo", summary: "查询 DRSP 复制链路关联关系"}
+      - {name: tenancy_query_groups, section: "5.4.8", method: GET, path: "/open_api/insight/external/tenant/getGroup", summary: "查询集群分片数据"}
+      - {name: tenancy_query_rooms, section: "5.4.9", method: GET, path: "/open_api/insight/external/tenant/getRoom", summary: "查询集群 AZ 数据"}
+      - {name: tenancy_query_managers, section: "5.4.10", method: GET, path: "/open_api/insight/external/tenant/getManagerList", summary: "查询集群管理节点数据"}
+      - {name: tenancy_query_clusters, section: "5.4.11", method: GET, path: "/open_api/insight/external/tenant/getTenancyList", summary: "查询集群数据"}
+      - {name: tenancy_query_dn_list, section: "5.4.12", method: GET, path: "/open_api/insight/external/tenant/getDNList", summary: "查询集群 DN 数据"}
+
+  - group: backup_restore
+    section: "5.5"
+    tools:
+      - {name: backup_add, section: "5.5.1", method: POST, path: "/open_api/insight/external/cluster/realTimeBackup", summary: "新增备份任务", returns_task: true}
+      - {name: backup_progress, section: "5.5.2", method: GET, path: "/open_api/insight/external/cluster/queryBackupHistoryDetail", summary: "查询备份进度"}
+      - {name: backup_sequence_recover, section: "5.5.3", method: POST, path: "/open_api/insight/external/backup/sequenceRecovery", summary: "Sequence 恢复", returns_task: true}
+      - {name: backup_sequence_recover_query, section: "5.5.4", method: POST, path: "/open_api/insight/external/backup/SequenceRecoveryTaskQuery", summary: "Sequence 恢复任务查询"}
+      - {name: backup_set_max_gtid, section: "5.5.5", method: POST, path: "/open_api/insight/external/backup/SetMaxGTID", summary: "设置最大 GTID"}
+      - {name: backup_metadata_recover, section: "5.5.6", method: POST, path: "/open_api/insight/external/backup/metadataRecovery", summary: "元数据恢复", returns_task: true}
+      - {name: backup_metadata_recover_query, section: "5.5.7", method: POST, path: "/open_api/insight/external/backup/MetadataRecoveryTaskQuery", summary: "元数据恢复任务查询"}
+      - {name: storage_config_add, section: "5.5.8", method: POST, path: "/open_api/insight/external/backup/saveStorageConfig", summary: "新增存储配置"}
+      - {name: storage_config_add_other, section: "5.5.9", method: POST, path: "/open_api/insight/external/backup/otherGDB/saveStorageConfig", summary: "新增其他系统存储配置"}
+      - {name: storage_config_query, section: "5.5.10", method: GET, path: "/open_api/insight/external/backup/queryStorageConfig", summary: "查询存储配置"}
+      - {name: storage_config_set_cluster, section: "5.5.11", method: POST, path: "/open_api/insight/external/backup/setClusterBackupConfig", summary: "设置租户存储配置"}
+      - {name: backup_logic_strategy_query, section: "5.5.12", method: GET, path: "/open_api/insight/external/backup/queryLogicBackupCleanStrategy", summary: "查询逻辑备份清理策略"}
+      - {name: backup_logic_strategy_set, section: "5.5.13", method: POST, path: "/open_api/insight/external/backup/setLogicBackupCleanStrategy", summary: "设置逻辑备份清理策略"}
+      - {name: storage_config_delete, section: "5.5.14", method: POST, path: "/open_api/insight/external/backup/deleteStorageConfig", summary: "删除系统存储模板配置"}
+      - {name: recovery_slave_dn, section: "5.5.15", method: POST, path: "/open_api/insight/external/autoRecovery/slaveDN", summary: "下发恢复备机任务", returns_task: true}
+      - {name: recovery_rdb, section: "5.5.16", method: POST, path: "/open_api/insight/external/autoRecovery/rdb", summary: "下发恢复 RDB 任务", returns_task: true}
+      - {name: backup_schedule_binlog_disable, section: "5.5.17", method: POST, path: "/open_api/insight/external/backup/deleteScheduleBinlogBackup", summary: "失效定时 binlog 备份任务"}
+      - {name: backup_schedule_binlog_query, section: "5.5.18", method: GET, path: "/open_api/insight/external/backup/getScheduleBinlogBackup", summary: "查询定时 binlog 备份任务"}
+      - {name: backup_real_binlog_add, section: "5.5.19", method: POST, path: "/open_api/insight/external/backup/addRealBinlogBackup", summary: "新增实时 binlog 备份任务"}
+      - {name: backup_real_binlog_info, section: "5.5.20", method: GET, path: "/open_api/insight/external/backup/getBinlogBackupInfo", summary: "查询实时 binlog 备份任务详情"}
+      - {name: backup_gtm_max_gtid_query, section: "5.5.21", method: GET, path: "/open_api/insight/external/backup/getMomentMaxGTID", summary: "查询指定时刻 GTM 最大 GTID"}
+      - {name: restore_dn_add, section: "5.5.22", method: POST, path: "/open_api/insight/external/backup/addDNRestoreTask", summary: "新增 DN 级恢复任务", returns_task: true}
+      - {name: restore_dn_info, section: "5.5.23", method: GET, path: "/open_api/insight/external/backup/getDNRestoreInfo", summary: "查询 DN 级恢复任务详情"}
+      - {name: backup_cluster_add, section: "5.5.24", method: POST, path: "/open_api/insight/external/backup/addClusterBackupTask", summary: "新建集群级备份任务", returns_task: true}
+      - {name: backup_cluster_query, section: "5.5.25", method: POST, path: "/open_api/insight/external/backup/clusterBackupTaskQuery", summary: "查询集群级备份任务"}
+      - {name: restore_cluster_add, section: "5.5.26", method: POST, path: "/open_api/insight/external/backup/addClusterRecoveryTask", summary: "新建集群级恢复任务", returns_task: true}
+      - {name: restore_cluster_query, section: "5.5.27", method: POST, path: "/open_api/insight/external/backup/clusterRecoveryTaskQuery", summary: "查询集群级恢复任务"}
+      - {name: backup_metadata_add, section: "5.5.28", method: POST, path: "/open_api/insight/external/backup/MetadataBackup", summary: "下发元数据备份任务", returns_task: true}
+      - {name: backup_metadata_query, section: "5.5.29", method: POST, path: "/open_api/insight/external/backup/MetadataBackupTaskQuery", summary: "元数据备份任务查询"}
+      - {name: backup_sequence_add, section: "5.5.30", method: POST, path: "/open_api/insight/external/backup/SequenceBackup", summary: "下发 Sequence 备份任务", returns_task: true}
+      - {name: backup_sequence_query, section: "5.5.31", method: POST, path: "/open_api/insight/external/backup/SequenceBackupTaskQuery", summary: "Sequence 备份任务查询"}
+      - {name: backup_stop, section: "5.5.32", method: POST, path: "/open_api/insight/external/backup/stopBackupTask", summary: "下发停止备份任务", returns_task: true}
+      - {name: backup_stop_query, section: "5.5.33", method: GET, path: "/open_api/insight/external/backup/queryStopBackupTaskResult", summary: "停止备份任务查询", query: ["taskId"]}
+      - {name: backup_task_list, section: "5.5.34", method: GET, path: "/open_api/insight/external/backup/getBackupTaskList", summary: "查询备份任务列表"}
+      - {name: restore_task_list, section: "5.5.35", method: GET, path: "/open_api/insight/external/backup/getRestoreTaskList", summary: "查询恢复任务列表"}
+      - {name: backup_task_info, section: "5.5.36", method: GET, path: "/open_api/insight/external/backup/getBackupTaskInfo", summary: "查询备份任务信息"}
+      - {name: backup_active_tx_add, section: "5.5.37", method: POST, path: "/open_api/insight/external/backup/activeBackup", summary: "新增活跃事务备份任务"}
+      - {name: backup_metadata_inc_add, section: "5.5.38", method: POST, path: "/open_api/insight/external/backup/MetadataBackupInc", summary: "新增元数据备份任务"}
+      - {name: backup_sequence_inc_add, section: "5.5.39", method: POST, path: "/open_api/insight/external/backup/SequenceBackupInc", summary: "新增 Sequence 备份任务"}
+      - {name: backup_dn_real_add, section: "5.5.40", method: POST, path: "/open_api/insight/external/backup/addRealBackupTask", summary: "新建 DN 级备份任务（新）"}
+
+  - group: tenancy_runtime_config
+    section: "5.6-5.15"
+    tools:
+      - {name: tenancy_modify_resource_unit, section: "5.6", method: POST, path: "/open_api/insight/external/tenancy/modifyResourceUnit", summary: "修改集群组件规格"}
+      - {name: tenancy_auto_fault_disable, section: "5.7", method: POST, path: "/open_api/insight/external/tenant/autoFaultDisable", summary: "启用/禁用集群故障自动切换策略"}
+      - {name: tenancy_modify_ha_config, section: "5.8", method: POST, path: "/open_api/insight/external/tenancy/modifyHAConfig", summary: "修改高可用信息"}
+      - {name: tenancy_operate, section: "5.9", method: POST, path: "/open_api/insight/external/tenant/clusterOperate", summary: "租户启停"}
+      - {name: tenancy_set_conn_config, section: "5.10", method: POST, path: "/open_api/insight/external/tenant/setConnInstance", summary: "修改最大连接数/读写分离配置"}
+      - {name: tenancy_get_conn_config, section: "5.11", method: GET, path: "/open_api/insight/external/tenant/connInstance/info", summary: "查询最大连接数/读写分离配置"}
+      - {name: tenancy_set_group_work_mode, section: "5.12", method: POST, path: "/open_api/insight/external/setGroupWorkMode", summary: "设置分片工作模式"}
+      - {name: tenancy_batch_bind_service_port, section: "5.13", method: POST, path: "/open_api/insight/external/tenant/batchBindServicePort", summary: "批量 CN 绑定/解绑服务端口"}
+      - {name: tenancy_switch_work_mode, section: "5.14", method: GET, path: "/open_api/insight/external/tenant/switchWorkMode", summary: "切换租户只读模式"}
+      - {name: tenancy_config_auto_fault_switch_strategy, section: "5.15", method: POST, path: "/open_api/insight/external/tenancy/configAutoFaultSwitchStrategy", summary: "配置故障自动切换策略"}
+
+  - group: db_user_permission
+    section: "6"
+    tools:
+      - {name: db_user_add_with_grant, section: "6.1", method: POST, path: "/open_api/insight/external/addDBUserAndGrant", summary: "新增用户及权限"}
+      - {name: db_user_password_reset, section: "6.2", method: POST, path: "/open_api/insight/external/resetUserPassword", summary: "修改用户密码"}
+      - {name: db_user_delete, section: "6.3", method: POST, path: "/open_api/insight/external/deleteDBUser", summary: "删除用户"}
+      - {name: db_user_query, section: "6.4", method: GET, path: "/open_api/insight/external/queryDBUser", summary: "查询用户信息"}
+      - {name: db_user_modify_with_grant, section: "6.5", method: POST, path: "/open_api/insight/external/modifyDBUserAndGrant", summary: "修改用户及权限"}
+      - {name: db_user_permission_query, section: "6.6", method: POST, path: "/open_api/insight/external/queryDbUserPermissions", summary: "查询数据库账号权限"}
+      - {name: db_user_permission_modify, section: "6.7", method: POST, path: "/open_api/insight/external/modifyDbUserPermissions", summary: "修改数据库账号权限"}
+
+  - group: tenancy_business
+    section: "7"
+    tools:
+      - {name: tenancy_query_realtime_sql, section: "7.1.1", method: GET, path: "/open_api/insight/external/tenancy/queryRealtimeSQL", summary: "查询租户实时在线 SQL"}
+      - {name: tenancy_query_realtime_trans, section: "7.1.2", method: GET, path: "/open_api/insight/external/tenancy/queryRealtimeTrans", summary: "查询租户实时在线事务"}
+      - {name: tenancy_query_abnormal_table, section: "7.1.3", method: GET, path: "/open_api/insight/external/tenancy/queryAbnormalTable", summary: "查询租户状态异常表"}
+      - {name: tenancy_query_object_list, section: "7.1.4", method: GET, path: "/open_api/insight/external/tenancy/searchTenancyTables", summary: "查询租户下数据库对象列表"}
+      - {name: tenancy_query_table_ddl, section: "7.1.5", method: GET, path: "/open_api/insight/external/tenancy/searchTenancyTableDDL", summary: "查询租户下表结构"}
+      - {name: tenancy_kill_realtime_sql, section: "7.2.1", method: POST, path: "/open_api/insight/external/tenancy/killRealtimeSQL", summary: "KILL 租户实时在线 SQL"}
+      - {name: tenancy_kill_realtime_trans, section: "7.2.2", method: POST, path: "/open_api/insight/external/tenancy/killRealtimeTrans", summary: "KILL 租户实时在线事务"}
+      - {name: tenancy_enable_table, section: "7.2.3", method: POST, path: "/open_api/insight/external/tenancy/enableTable", summary: "解禁租户被禁表"}
+      - {name: tenancy_create_database, section: "7.2.4", method: POST, path: "/open_api/insight/external/metadata/ddlExecuteTextForGdb", summary: "创建数据库"}
+      - {name: tenancy_sql_audit_add, section: "7.2.5", method: POST, path: "/open_api/insight/external/cluster/SQLAudit", summary: "新增 SQL 审核任务"}
+
+  - group: lds_management
+    section: "8"
+    tools:
+      - {name: lds_add, section: "8.1", method: POST, path: "/open_api/insight/external/tenant/batchAddLDS", summary: "新增 LDS 组件"}
+
+  - group: gtm_cluster
+    section: "9"
+    tools:
+      - {name: gtm_cluster_query, section: "9.1", method: GET, path: "/open_api/insight/external/tenant/searchGTMCluster", summary: "查询 GTM 集群信息"}
+      - {name: gtm_cluster_modify_config, section: "9.2", method: POST, path: "/open_api/insight/external/gtmcluster/modifyConfig", summary: "配置 GTM 集群"}
+
+  - group: ha_switch
+    section: "10"
+    tools:
+      - {name: ha_switch_dn_group, section: "10.1.1", method: POST, path: "/open_api/insight/container/drillswitch/dnSwitch", summary: "DN 分片切换", returns_task: true}
+      - {name: ha_switch_dn_group_result, section: "10.1.2", method: GET, path: "/open_api/insight/container/drillswitch/dnSwitchResult", summary: "查询 DN 分片切换结果", query: ["taskId"]}
+      - {name: ha_switch_gtm_group, section: "10.1.3", method: POST, path: "/open_api/insight/container/drillswitch/gtmSwitch", summary: "GTM 分片切换", returns_task: true}
+      - {name: ha_switch_tenancy, section: "10.2.1", method: POST, path: "/open_api/insight/container/drillswitch/tenancy", summary: "租户切同城/异地", returns_task: true}
+      - {name: ha_switch_tenancy_result, section: "10.2.2", method: GET, path: "/open_api/insight/container/drillswitch/queryResult", summary: "查询租户切换结果", query: ["taskId"]}
+      - {name: ha_switch_az_drill, section: "10.3.1", method: POST, path: "/open_api/insight/container/drillswitch/az", summary: "机房切换演练", returns_task: true}
+      - {name: ha_switch_az_drill_result, section: "10.3.2", method: GET, path: "/open_api/insight/container/drillswitch/queryResult", summary: "机房演练切换结果查询", query: ["taskId"]}
+      - {name: ha_switch_cross_az, section: "10.3.3", method: POST, path: "/open_api/insight/external/planswitch/switchAz", summary: "跨机房故障和计划切换", returns_task: true}
+      - {name: ha_switch_cross_az_result, section: "10.3.4", method: GET, path: "/open_api/insight/external/planswitch/querySwitchAzResult", summary: "跨机房切换结果查询", query: ["taskId"]}
+
+  - group: monitor_collect
+    section: "11"
+    tools:
+      - {name: monitor_host_statistics, section: "11.1", method: GET, path: "/open_api/insight/external/collect/searchHostCollectData", summary: "查询主机统计信息"}
+      - {name: monitor_host_mount_points, section: "11.2", method: GET, path: "/open_api/insight/external/collect/searchHostMountPointData", summary: "查询主机挂载点信息"}
+      - {name: monitor_tenancy_statistics, section: "11.3", method: GET, path: "/open_api/insight/external/monitorCollect/searchMonitorData", summary: "查询租户类统计信息"}
+      - {name: monitor_topn_sql, section: "11.4", method: GET, path: "/open_api/insight/external/monitorCollect/searchTopNSql", summary: "查询租户 TopN SQL 统计信息"}
+      - {name: monitor_dn_slow_sql, section: "11.5", method: GET, path: "/open_api/insight/external/tenancy/queryDnSlowSql", summary: "查询租户 DN 节点慢 SQL"}
+      - {name: monitor_cn_slow_sql, section: "11.6", method: GET, path: "/open_api/insight/external/tenancy/queryCNSlowSql", summary: "查询租户 CN 节点慢 SQL"}
+      - {name: monitor_tenancy_metrics, section: "11.9", method: GET, path: "/open_api/insight/external/monitorCollect/searchTenancyData", summary: "查询租户指标采集数据"}
+      - {name: monitor_host_metrics, section: "11.10", method: GET, path: "/open_api/insight/external/monitorCollect/searchHostData", summary: "查询主机指标采集数据"}
+      - {name: monitor_manager_metrics, section: "11.11", method: GET, path: "/open_api/insight/external/monitorCollect/searchManagerData", summary: "查询管理节点指标采集数据"}
+      - {name: monitor_common_sql_collect, section: "11.12", method: POST, path: "/open_api/insight/external/collect/common/sql", summary: "通用 SQL 命令采集"}
+      - {name: monitor_common_sql_command_list, section: "11.13", method: POST, path: "/open_api/insight/external/collect/common/sql/command/list", summary: "通用 SQL 命令采集接口信息查询"}
+      - {name: monitor_common_sql_storage_query, section: "11.14", method: POST, path: "/open_api/insight/external/collect/sql/config/query", summary: "查询通用 SQL 采集存储配置"}
+      - {name: monitor_common_sql_storage_set, section: "11.15", method: POST, path: "/open_api/insight/external/collect/sql/config", summary: "设置通用 SQL 采集存储配置"}
+      - {name: monitor_kill_session, section: "11.16", method: POST, path: "/open_api/insight/external/collect/session/kill", summary: "KILL CN 或 DN 会话"}
+      - {name: monitor_sql_throttle_add, section: "11.17", method: POST, path: "/open_api/insight/external/collect/sql/blacklist/add", summary: "新增 SQL 限流"}
+
+  - group: manager_node
+    section: "12"
+    tools:
+      - {name: manager_add, section: "12.1", method: POST, path: "/open_api/insight/external/manager/addManager", summary: "纳管管理节点", returns_task: true}
+      - {name: manager_add_progress, section: "12.2", method: POST, path: "/open_api/insight/external/container/install/queryAddManagerResult", summary: "查询纳管进度"}
+
+  - group: self_healing
+    section: "13"
+    tools:
+      - {name: healing_device, section: "13.1", method: POST, path: "/open_api/insight/external/operateDevice/selfHealingDevice", summary: "组件自愈", returns_task: true}
+      - {name: healing_host, section: "13.2", method: POST, path: "/open_api/insight/external/operateDevice/selfHealingHost", summary: "主机自愈", returns_task: true}
+      - {name: healing_query_result, section: "13.3", method: GET, path: "/open_api/insight/external/operateDevice/queryInstallResult", summary: "查询自愈任务进度", query: ["taskId"]}
+      - {name: shrink_device, section: "13.4", method: POST, path: "/open_api/insight/external/operateDevice/deleteDevice", summary: "组件缩容", returns_task: true}
+      - {name: shrink_host, section: "13.5", method: POST, path: "/open_api/insight/external/operateDevice/deleteHost", summary: "主机缩容", returns_task: true}
+
+  - group: sql_blacklist
+    section: "14"
+    tools:
+      - {name: sql_blacklist_manage, section: "14.1", method: POST, path: "/open_api/insight/external/cluster/dealBlackSql", summary: "新增/修改/删除 SQL 黑名单"}
+
+  - group: ha_strategy_template
+    section: "15"
+    tools:
+      - {name: ha_strategy_add, section: "15.1", method: POST, path: "/open_api/insight/external/highAvailability/addStrategy", summary: "新增高可用策略模板"}
+      - {name: ha_strategy_delete, section: "15.2", method: POST, path: "/open_api/insight/external/highAvailability/deleteStrategy", summary: "删除高可用策略模板"}
+      - {name: ha_strategy_edit, section: "15.3", method: POST, path: "/open_api/insight/external/highAvailability/editStrategy", summary: "编辑高可用策略模板"}
+      - {name: ha_strategy_query, section: "15.4", method: GET, path: "/open_api/insight/external/highAvailability/queryStrategy", summary: "查询高可用策略模板"}
+
+  - group: device_standard
+    section: "16"
+    tools:
+      - {name: device_standard_add, section: "16.1", method: POST, path: "/open_api/insight/external/device/addDeviceStandard", summary: "新增组件规格配置"}
+      - {name: device_standard_delete, section: "16.2", method: POST, path: "/open_api/insight/external/device/deleteDeviceStandard", summary: "删除组件规格配置"}
+      - {name: device_standard_edit, section: "16.3", method: POST, path: "/open_api/insight/external/device/editDeviceStandard", summary: "编辑组件规格配置"}
+      - {name: device_standard_query, section: "16.4", method: GET, path: "/open_api/insight/external/device/queryDeviceStandard", summary: "查询组件规格配置"}
+
+  - group: advanced_statistics
+    section: "17"
+    tools:
+      - {name: tenancy_dn_lock_wait_query, section: "17.1.1", method: GET, path: "/open_api/insight/external/tenancy/queryDNLockWait", summary: "查询租户 DN 锁等待信息"}
+      - {name: tenancy_trans_statistics, section: "17.1.2", method: GET, path: "/open_api/insight/external/tenancy/trans/statistic", summary: "查询租户事务响应统计信息"}
+
+  - group: system_patrol
+    section: "18"
+    tools:
+      - {name: patrol_diag_task_add, section: "18.1", method: POST, path: "/open_api/insight/external/diagnoseCollect/addDiagTask", summary: "新增巡检诊断任务", returns_task: true}
+      - {name: patrol_log_collect_task_add, section: "18.2", method: POST, path: "/open_api/insight/external/diagnoseCollect/addCollectTask", summary: "新增巡检日志采集任务", returns_task: true}
+      - {name: patrol_collect_query, section: "18.3", method: GET, path: "/open_api/insight/external/diagnoseCollect/queryDiagnoseCollectTask", summary: "巡检采集任务结果查询"}
+      - {name: merge_task_info_get, section: "18.4", method: GET, path: "/open_api/insight/external/mergeTask/getMergeTaskInfo", summary: "查询任务信息"}
+      - {name: insight_patrol_task_add, section: "18.5", method: POST, path: "/open_api/insight/external/newPatrol/addPatrolTask", summary: "Insight 新增巡检任务"}
+      - {name: insight_patrol_task_list, section: "18.6", method: GET, path: "/open_api/insight/external/newPatrol/queryTaskList", summary: "Insight 查询巡检任务列表"}
+      - {name: insight_patrol_result_list, section: "18.7", method: GET, path: "/open_api/insight/external/newPatrol/queryPatrolResultList", summary: "Insight 查询巡检任务结果"}
+      - {name: insight_patrol_task_delete, section: "18.8", method: GET, path: "/open_api/insight/external/newPatrol/deleteTask", summary: "Insight 删除巡检任务"}
+      - {name: insight_patrol_report_download, section: "18.9", method: POST, path: "/open_api/insight/external/newPatrol/downloadReport", summary: "Insight 下载巡检报告"}
+
+  - group: version_repository
+    section: "19"
+    tools:
+      - {name: gdb_version_get, section: "19.1.1", method: GET, path: "/open_api/insight/external/gdb/getVersion", summary: "查询当前 GDB 系统版本"}
+      - {name: device_version_query, section: "19.1.2", method: GET, path: "/open_api/insight/external/version/queryDeviceVersionInfos", summary: "查询组件版本信息"}
+
+  - group: common_command
+    section: "20"
+    tools:
+      - {name: command_execute, section: "20.1", method: POST, path: "/open_api/insight/external/command/execution", summary: "通用命令执行"}
+
+  - group: network_info
+    section: "21"
+    tools:
+      - {name: network_info_query, section: "21.1", method: GET, path: "/open_api/insight/external/common/device_info/query", summary: "查询组网信息"}
+
+async_pairs:
+  - {action: host_batch_add_json, query: host_batch_add_progress, key: taskId}
+  - {action: host_batch_add_excel, query: host_batch_add_progress, key: taskId}
+  - {action: tenant_param_modify, query: tenant_param_modify_result, key: taskId}
+  - {action: tenancy_create, query: tenancy_create_progress, key: taskId}
+  - {action: tenancy_add_dn_group, query: tenancy_add_dn_group_progress, key: taskId}
+  - {action: tenancy_delete_dn_group, query: tenancy_delete_dn_group_progress, key: taskId}
+  - {action: tenancy_add_outer_dn, query: tenancy_add_outer_dn_progress, key: taskId}
+  - {action: tenancy_delete, query: tenancy_delete_result, key: taskId}
+  - {action: ha_switch_dn_group, query: ha_switch_dn_group_result, key: taskId}
+  - {action: ha_switch_tenancy, query: ha_switch_tenancy_result, key: taskId}
+  - {action: ha_switch_az_drill, query: ha_switch_az_drill_result, key: taskId}
+  - {action: ha_switch_cross_az, query: ha_switch_cross_az_result, key: taskId}
+  - {action: manager_add, query: manager_add_progress, key: taskId}
+  - {action: healing_device, query: healing_query_result, key: taskId}
+  - {action: healing_host, query: healing_query_result, key: taskId}
+
+notes:
+  - 文档中部分接口给出的 requestUrl 含示例查询参数，例如 taskId=1；实际调用时应拆分为 path + query 参数。
+  - 文档中部分 method 文本存在 type:post、请求方法：GET 等写法差异，已统一抽象为 GET 或 POST。
+  - 详细请求体字段建议优先通过 rest_info_get 动态获取，避免手工维护文档漂移。

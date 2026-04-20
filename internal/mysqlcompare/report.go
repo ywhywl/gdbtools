@@ -107,8 +107,6 @@ func renderTextSummary(summary ComparisonSummary, exitCode int) []string {
 func renderTargetSummaryDetail(prefix string, detail TargetSummaryDetail) []string {
 	parts := []string{
 		prefix + "target=" + detail.Target,
-		"      host=" + detail.Host,
-		"      port=" + itoa(detail.Port),
 	}
 	if detail.Database != "" {
 		parts = append(parts, "      database="+detail.Database)
@@ -224,9 +222,8 @@ func renderPrivilegeDiff(privilegeDiff PrivilegeDiff) []string {
 		entries = append(entries, []string{"    target only identity: " + toString(identity["identity"])})
 	}
 	for _, item := range privilegeDiff.ChangedIdentities {
-		sourceDiff, targetDiff := diffPayloadFields(item["source"], item["target"])
-		sourcePayload, _ := json.Marshal(sourceDiff)
-		targetPayload, _ := json.Marshal(targetDiff)
+		sourcePayload, _ := json.Marshal(item["source"])
+		targetPayload, _ := json.Marshal(item["target"])
 		entries = append(entries, []string{
 			"    changed identity: " + toString(item["identity"]),
 			"      source=" + string(sourcePayload),

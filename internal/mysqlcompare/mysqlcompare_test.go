@@ -165,6 +165,51 @@ func TestDiffPrivilegesUserModeIgnoresHostDifferences(t *testing.T) {
 	}
 }
 
+func TestDiffPrivilegesIgnoresAdditionalTargetPrivileges(t *testing.T) {
+	source := ensureBundle(map[string]*PrivilegeBundle{}, "app", "%", "user_host")
+	source.DBPrivileges["source_db"] = StringSet{}
+	source.DBPrivileges["source_db"].Add("SELECT")
+
+	target := ensureBundle(map[string]*PrivilegeBundle{}, "app", "%", "user_host")
+	target.DBPrivileges["source_db"] = StringSet{}
+	target.DBPrivileges["source_db"].Add("SELECT")
+	target.DBPrivileges["source_db"].Add("UPDATE")
+
+	diff := diffPrivileges(
+		map[string]*PrivilegeBundle{"app@%": source},
+		map[string]*PrivilegeBundle{"app@%": target},
+	)
+	if diff.HasChanges() {
+		t.Fatalf("additional target privileges should be ignored: %#v", diff)
+	}
+}
+
+func TestDiffPrivilegesReportsOnlyMissingPrivileges(t *testing.T) {
+	source := ensureBundle(map[string]*PrivilegeBundle{}, "app", "%", "user_host")
+	source.DBPrivileges["source_db"] = StringSet{}
+	source.DBPrivileges["source_db"].Add("SELECT")
+	source.DBPrivileges["source_db"].Add("UPDATE")
+
+	target := ensureBundle(map[string]*PrivilegeBundle{}, "app", "%", "user_host")
+	target.DBPrivileges["source_db"] = StringSet{}
+	target.DBPrivileges["source_db"].Add("SELECT")
+
+	diff := diffPrivileges(
+		map[string]*PrivilegeBundle{"app@%": source},
+		map[string]*PrivilegeBundle{"app@%": target},
+	)
+	if len(diff.ChangedIdentities) != 1 {
+		t.Fatalf("expected one changed identity, got %#v", diff)
+	}
+	rendered := strings.Join(renderPrivilegeDiff(diff), "\n")
+	if !strings.Contains(rendered, `"db_privileges":{"source_db":["UPDATE"]}`) {
+		t.Fatalf("missing minimal db privilege diff: %s", rendered)
+	}
+	if strings.Contains(rendered, "SELECT") {
+		t.Fatalf("existing target privileges should not be shown: %s", rendered)
+	}
+}
+
 func TestSplitMultiValueSupportsSemicolon(t *testing.T) {
 	items := splitMultiValue([]string{"BackupAdmin;ReplicationAdmin，dbadmin；dbproxy"})
 	if len(items) != 4 {
@@ -212,21 +257,13 @@ func TestRenderPrivilegeDiffShowsOnlyChangedFields(t *testing.T) {
 			{
 				"identity": "cmp_priv_b@%",
 				"source": map[string]any{
-					"identity":          "cmp_priv_b@%",
-					"hosts":             []string{"%"},
-					"global_privileges": []string{},
-					"db_privileges":     map[string]any{},
 					"table_privileges": map[string]any{
 						"cmp_reason_src.orders": []string{"SELECT"},
 					},
 				},
 				"target": map[string]any{
-					"identity":          "cmp_priv_b@%",
-					"hosts":             []string{"%"},
-					"global_privileges": []string{},
-					"db_privileges":     map[string]any{},
 					"table_privileges": map[string]any{
-						"cmp_reason_src.orders": []string{"UPDATE"},
+						"cmp_reason_src.orders": []string{},
 					},
 				},
 			},
@@ -405,11 +442,24 @@ func TestRenderTextSummaryShowsFailedAndInconsistentTargetDetails(t *testing.T) 
 	if !strings.Contains(rendered, "Failed target details:") {
 		t.Fatalf("missing failed target details block: %s", rendered)
 	}
-	if !strings.Contains(rendered, "host=10.0.0.11") || !strings.Contains(rendered, "port=3306") {
-		t.Fatalf("missing failed target host/port: %s", rendered)
+	if strings.Contains(rendered, "host=10.0.0.11") || strings.Contains(rendered, "port=3306") {
+		t.Fatalf("host/port should not be shown in summary output: %s", rendered)
 	}
 	if !strings.Contains(rendered, "compared_schemas=db_a->db_b") {
 		t.Fatalf("missing inconsistent target schema info: %s", rendered)
+	}
+}
+
+func TestBuildTargetSummaryDetailHidesComparedSchemasWithoutStructureCheck(t *testing.T) {
+	detail := buildTargetSummaryDetail(TargetComparison{
+		Target:            "root@10.0.0.12:3307",
+		TargetConfig:      ConnectionConfig{Host: "10.0.0.12", Port: 3307},
+		SchemaPairs:       []SchemaPair{{SourceSchema: "db_a", TargetSchema: "db_b"}},
+		IncludeStructure:  false,
+		IncludePrivileges: true,
+	})
+	if len(detail.ComparedSchemas) != 0 {
+		t.Fatalf("compared schemas should be hidden for privilege-only checks: %#v", detail)
 	}
 }
 

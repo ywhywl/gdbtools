@@ -1,6 +1,9 @@
 package mysqlcompare
 
-import "reflect"
+import (
+	"reflect"
+	"sort"
+)
 
 func mapSchemaPairs(
 	sourceAvailable, sourceSelected, sourceSelectors, targetAvailable, targetSelected, targetSelectors []string,
@@ -185,19 +188,14 @@ func diffPrivileges(sourceBundles, targetBundles map[string]*PrivilegeBundle) Pr
 	sourceKeys := mapKeys(sourceBundles)
 	targetKeys := mapKeys(targetBundles)
 	sourceOnly := []map[string]any{}
-	targetOnly := []map[string]any{}
 	changed := []map[string]any{}
 
 	for _, key := range diffStrings(sourceKeys, targetKeys) {
 		sourceOnly = append(sourceOnly, sourceBundles[key].ToMap())
 	}
-	for _, key := range diffStrings(targetKeys, sourceKeys) {
-		targetOnly = append(targetOnly, targetBundles[key].ToMap())
-	}
 	for _, key := range intersectStrings(sourceKeys, targetKeys) {
-		sourcePayload := sourceBundles[key].ToMap()
-		targetPayload := targetBundles[key].ToMap()
-		if !reflect.DeepEqual(sourcePayload, targetPayload) {
+		sourcePayload, targetPayload := diffPrivilegeBundleCoverage(sourceBundles[key], targetBundles[key])
+		if len(sourcePayload) > 0 {
 			changed = append(changed, map[string]any{
 				"identity": sourceBundles[key].Identity.DisplayName(),
 				"source":   sourcePayload,
@@ -208,9 +206,74 @@ func diffPrivileges(sourceBundles, targetBundles map[string]*PrivilegeBundle) Pr
 
 	return PrivilegeDiff{
 		SourceOnlyIdentities: sourceOnly,
-		TargetOnlyIdentities: targetOnly,
 		ChangedIdentities:    changed,
 	}
+}
+
+func diffPrivilegeBundleCoverage(source, target *PrivilegeBundle) (map[string]any, map[string]any) {
+	sourceDiff := map[string]any{}
+	targetDiff := map[string]any{}
+
+	if missing := missingPrivileges(source.GlobalPrivileges, target.GlobalPrivileges); len(missing) > 0 {
+		sourceDiff["global_privileges"] = missing
+		targetDiff["global_privileges"] = []string{}
+	}
+
+	sourceDBDiff := map[string][]string{}
+	targetDBDiff := map[string][]string{}
+	for _, dbName := range mapKeys(source.DBPrivileges) {
+		if missing := missingPrivileges(source.DBPrivileges[dbName], target.DBPrivileges[dbName]); len(missing) > 0 {
+			sourceDBDiff[dbName] = missing
+			targetDBDiff[dbName] = []string{}
+		}
+	}
+	if len(sourceDBDiff) > 0 {
+		sourceDiff["db_privileges"] = sourceDBDiff
+		targetDiff["db_privileges"] = targetDBDiff
+	}
+
+	sourceTableDiff := map[string][]string{}
+	targetTableDiff := map[string][]string{}
+	for _, scope := range sortedTableScopes(source.TablePrivileges) {
+		if missing := missingPrivileges(source.TablePrivileges[scope], target.TablePrivileges[scope]); len(missing) > 0 {
+			key := scope.Schema + "." + scope.Table
+			sourceTableDiff[key] = missing
+			targetTableDiff[key] = []string{}
+		}
+	}
+	if len(sourceTableDiff) > 0 {
+		sourceDiff["table_privileges"] = sourceTableDiff
+		targetDiff["table_privileges"] = targetTableDiff
+	}
+
+	return sourceDiff, targetDiff
+}
+
+func missingPrivileges(source, target StringSet) []string {
+	if len(source) == 0 {
+		return nil
+	}
+	missing := make([]string, 0, len(source))
+	for _, privilege := range source.Sorted() {
+		if _, found := target[privilege]; !found {
+			missing = append(missing, privilege)
+		}
+	}
+	return missing
+}
+
+func sortedTableScopes(items map[TableScope]StringSet) []TableScope {
+	keys := make([]TableScope, 0, len(items))
+	for scope := range items {
+		keys = append(keys, scope)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i].Schema == keys[j].Schema {
+			return keys[i].Table < keys[j].Table
+		}
+		return keys[i].Schema < keys[j].Schema
+	})
+	return keys
 }
 
 func columnToMap(column ColumnMeta) map[string]any {

@@ -248,8 +248,6 @@ func (c TargetComparison) HasDifferences() bool {
 
 type TargetSummaryDetail struct {
 	Target          string   `json:"target"`
-	Host            string   `json:"host"`
-	Port            int      `json:"port"`
 	Database        string   `json:"database,omitempty"`
 	ComparedSchemas []string `json:"compared_schemas,omitempty"`
 	Error           string   `json:"error,omitempty"`

@@ -290,13 +290,13 @@ func buildSummary(comparisons []TargetComparison) ComparisonSummary {
 
 func buildTargetSummaryDetail(comparison TargetComparison) TargetSummaryDetail {
 	comparedSchemas := []string{}
-	for _, pair := range comparison.SchemaPairs {
-		comparedSchemas = append(comparedSchemas, pair.SourceSchema+"->"+pair.TargetSchema)
+	if comparison.IncludeStructure {
+		for _, pair := range comparison.SchemaPairs {
+			comparedSchemas = append(comparedSchemas, pair.SourceSchema+"->"+pair.TargetSchema)
+		}
 	}
 	return TargetSummaryDetail{
 		Target:          comparison.Target,
-		Host:            comparison.TargetConfig.Host,
-		Port:            comparison.TargetConfig.Port,
 		Database:        comparison.TargetConfig.Database,
 		ComparedSchemas: comparedSchemas,
 		Error:           comparison.Error,
