@@ -264,6 +264,7 @@ func buildSummary(comparisons []TargetComparison) ComparisonSummary {
 	totalTargets := len(comparisons)
 	failedTargets := 0
 	inconsistentTargets := 0
+	blockingTargets := 0
 	failedTargetDetails := []TargetSummaryDetail{}
 	inconsistentDetails := []TargetSummaryDetail{}
 	for _, comparison := range comparisons {
@@ -275,6 +276,9 @@ func buildSummary(comparisons []TargetComparison) ComparisonSummary {
 			inconsistentTargets++
 			inconsistentDetails = append(inconsistentDetails, buildTargetSummaryDetail(comparison))
 		}
+		if comparison.HasBlockingDifferences() {
+			blockingTargets++
+		}
 	}
 	successfulTargets := totalTargets - failedTargets
 	return ComparisonSummary{
@@ -283,6 +287,7 @@ func buildSummary(comparisons []TargetComparison) ComparisonSummary {
 		FailedTargets:       failedTargets,
 		ConsistentTargets:   successfulTargets - inconsistentTargets,
 		InconsistentTargets: inconsistentTargets,
+		BlockingTargets:     blockingTargets,
 		FailedTargetDetails: failedTargetDetails,
 		InconsistentDetails: inconsistentDetails,
 	}
@@ -307,7 +312,7 @@ func determineExitCode(summary ComparisonSummary) int {
 	if summary.FailedTargets > 0 {
 		return 2
 	}
-	if summary.InconsistentTargets > 0 {
+	if summary.BlockingTargets > 0 {
 		return 1
 	}
 	return 0

@@ -475,6 +475,49 @@ func TestBuildTargetSummaryDetailHidesComparedSchemasWithoutStructureCheck(t *te
 	}
 }
 
+func TestDetermineExitCodeIgnoresTargetOnlyPrivilegeUsers(t *testing.T) {
+	summary := buildSummary([]TargetComparison{
+		{
+			Target: "root@10.0.0.12:3307",
+			PrivilegeDiff: PrivilegeDiff{
+				TargetOnlyIdentities: []map[string]any{
+					{"identity": "user_extra"},
+				},
+			},
+			IncludePrivileges: true,
+		},
+	})
+	if summary.InconsistentTargets != 1 {
+		t.Fatalf("target-only users should still be reported as differences: %#v", summary)
+	}
+	if summary.BlockingTargets != 0 {
+		t.Fatalf("target-only users should not be blocking: %#v", summary)
+	}
+	if exitCode := determineExitCode(summary); exitCode != 0 {
+		t.Fatalf("target-only users should not change exit code, got %d", exitCode)
+	}
+}
+
+func TestDetermineExitCodeStillFailsOnSourceOnlyPrivilegeUsers(t *testing.T) {
+	summary := buildSummary([]TargetComparison{
+		{
+			Target: "root@10.0.0.12:3307",
+			PrivilegeDiff: PrivilegeDiff{
+				SourceOnlyIdentities: []map[string]any{
+					{"identity": "user_missing"},
+				},
+			},
+			IncludePrivileges: true,
+		},
+	})
+	if summary.BlockingTargets != 1 {
+		t.Fatalf("source-only users should be blocking: %#v", summary)
+	}
+	if exitCode := determineExitCode(summary); exitCode != 1 {
+		t.Fatalf("source-only users should keep exit code 1, got %d", exitCode)
+	}
+}
+
 func TestParseArgsLoadsDefaultCredentialsFromConfig(t *testing.T) {
 	tempDir := t.TempDir()
 	configPath := filepath.Join(tempDir, "mysqlcompare.json")

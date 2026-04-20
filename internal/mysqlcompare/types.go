@@ -220,6 +220,10 @@ func (d PrivilegeDiff) HasChanges() bool {
 	return len(d.SourceOnlyIdentities) > 0 || len(d.TargetOnlyIdentities) > 0 || len(d.ChangedIdentities) > 0
 }
 
+func (d PrivilegeDiff) HasBlockingChanges() bool {
+	return len(d.SourceOnlyIdentities) > 0 || len(d.ChangedIdentities) > 0
+}
+
 func (d PrivilegeDiff) DifferenceCount() int {
 	return len(d.SourceOnlyIdentities) + len(d.TargetOnlyIdentities) + len(d.ChangedIdentities)
 }
@@ -246,6 +250,13 @@ func (c TargetComparison) HasDifferences() bool {
 	return len(c.SchemaDiffs) > 0 || c.PrivilegeDiff.HasChanges()
 }
 
+func (c TargetComparison) HasBlockingDifferences() bool {
+	if c.Error != "" {
+		return false
+	}
+	return len(c.SchemaDiffs) > 0 || c.PrivilegeDiff.HasBlockingChanges()
+}
+
 type TargetSummaryDetail struct {
 	Target          string   `json:"target"`
 	Database        string   `json:"database,omitempty"`
@@ -259,6 +270,7 @@ type ComparisonSummary struct {
 	FailedTargets       int
 	ConsistentTargets   int
 	InconsistentTargets int
+	BlockingTargets     int
 	FailedTargetDetails []TargetSummaryDetail
 	InconsistentDetails []TargetSummaryDetail
 }
