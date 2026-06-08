@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"gdbtools/internal/mysqlcompare"
+	"github.com/ywhywl/gdbtools/internal/mysqlcompare"
 )
 
 func main() {

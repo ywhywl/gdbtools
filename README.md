@@ -33,6 +33,7 @@ Choose one of the two scripts:
 
 Or use the Go CLI:
 - `go run ./cmd/mysqlcompare ...`
+- `go install github.com/ywhywl/gdbtools/cmd/mysqlcompare@latest`
 
 ## Notes
 
@@ -60,6 +61,18 @@ Build or run:
 ```bash
 go build ./cmd/mysqlcompare
 go run ./cmd/mysqlcompare --help
+```
+
+Install remotely:
+
+```bash
+go install github.com/ywhywl/gdbtools/cmd/mysqlcompare@latest
+```
+
+Download this module into the local Go module cache:
+
+```bash
+go get github.com/ywhywl/gdbtools@latest
 ```
 
 Supported connection input:
@@ -132,4 +145,3 @@ Example privilege mapping:
 - Target selector `--target-schemas 'db*'`
 - If the selected target schema pair is `db0 -> db1`, source database-level privilege for `user1` on `db0` must match target database-level privilege for `user1` on `db1`
 - A target-side privilege for `user1` on some other schema such as `db0` does not satisfy the comparison for the `db0 -> db1` pair
-

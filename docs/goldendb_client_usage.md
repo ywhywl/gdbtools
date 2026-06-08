@@ -24,7 +24,7 @@ import (
 	"log"
 	"path/filepath"
 
-	"gdbtools/pkg/goldendb"
+	"github.com/ywhywl/gdbtools/pkg/goldendb"
 )
 
 func main() {

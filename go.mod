@@ -1,4 +1,4 @@
-module gdbtools
+module github.com/ywhywl/gdbtools
 
 go 1.23.1
 
