@@ -1,0 +1,192 @@
+5.2.2新增DN组件
+a.参数格式
+接口说明： 
+请求url：/open_api/insight/external/install/batchAddSlaveDN
+请求类型：POST
+入参字段说明：
+参数	类型	是否必填	描述
+taskId	String	否	传taskId重试任务
+clusterId	Integer	是	租户id
+dbgroupList	Array	是	分片列表
+parameterTemplateInfos	Array	否	组件参数模板列表，不传则使用默认模板
+dbgroupList字段说明：
+参数	类型	是否必填	描述
+dbgroupId	Integer	是	新增分片id
+teamList	Array	是	team列表
+teamList字段说明：
+参数	类型	是否必填	描述
+teamId	Integer	是	组id(该team存在则新增slaveDN,不存在则新增team)
+backupTask	Object	否	备份任务
+dnList	Array	是	DN列表
+backupTask字段说明：
+参数	类型	是否必填	描述
+selectStrategy	Integer	是	selectStrategy=0,或没有backupTask， 不恢复。
+selectStrategy=1,  选指定时间范围内时间最新的备份文件。如果开始结束时间为空，则选最近3天内系统中最新的备份文件。
+selectStrategy=2,  在满足时间范围内的备份文件中， 选同机房的、最新的备份文件。同机房无备份文件，报错。 如果开始结束时间为空，则选最近3天内的。
+ 入参机房根据新增DN的ip确定所属机房。 备份文件所属机房根据备份节点IP所在机房。
+selectStrategy=3,  指定备份文件id，backupId必填。依据指定的备份文件做数据恢复。
+startTime	String	否	开始时间，不填或为空忽略
+endTime	String	否	结束时间，不填或为空忽略
+backupId	Integer	否	selectStrategy=3时，指定备份文件id
+dnList字段说明：
+参数	类型	是否必填	描述
+ip	String	是	所在主机ip
+port	Integer	否	DN服务端口
+adminPort	Integer	否	DN管理端口
+installUser	String	否	安装用户名
+installPath	String	否	安装路径
+dataPath	String	否	数据存储路径
+logPath	String	否	日志存储路径。日志目录,日志目录需要包含用户名，传参使用#username代替用户名位置,只能传入一个#username。1：不传或传入空则和dataPath一致。2.传参中包含用户名层级，则直接使用传参值，不做改变。3: 不包含用户名也不包含#username，会自动在传入目录后添加用户名层级，例:传入/home，用户名为zxdb1，实际目录为/home/zxdb1。4：包含#username,会直接替换成用户名,例:传入/home/#username，用户名为zxdb1，实际目录为/home/zxdb1。5：传入/home/#username/log,用户名为zxdb1,实际为/home/zxdb1/log
+parameterTemplateInfos字段说明：
+参数	类型	是否必填	描述
+type	String	是	组件类型：CN、cluster,区分大小写，全词匹配
+templateName	String	是	模板名称
+入参示例:
+{
+  "clusterId": 1,
+"parameterTemplateInfos":[
+{
+"type":"DN",
+"templateName":"test.json"
+}],
+  "dbgroupList": [
+    {
+      "dbgroupId": 1,
+      "teamList": [
+        {
+          "teamId": 1,
+          "backupTask": {
+            "selectStrategy": 3,
+            "startTime": "",
+            "endTime": "",
+            "backupId": "3"
+          },
+          "dnList": [
+            {
+              "ip": "127.0.0.1",
+              "port": 5501,
+"adminPort": 33062,
+              "installUser": "zxdb1",
+              "installPath": "/home/gdb",
+              "dataPath": "/home/gdb",
+"logPath": "/home/zxdb1"
+            },
+            {
+              "ip": "127.0.0.1",
+              "port": 5502,
+"adminPort": 33063,
+              "installUser": "zxdb2",
+              "installPath": "/home/gdb",
+              "dataPath": "/home/gdb",
+"logPath": "/home/zxdb2"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+出参字段说明：
+参数	类型	描述
+code	Integer	1：成功；其他：失败
+msg	String	成功或者失败的描述信息
+data	Object	失败时的具体信息
+duration	String	请求接口耗时,ms
+operationId	String	操作id
+结果成功：
+data字段说明:
+参数	类型	描述
+taskId	String 	批量增加slaveDN任务id
+结果失败：
+data字段说明:
+参数	类型	描述
+failureList	Array	失败详情
+failureList字段说明:
+参数	类型	描述
+dbgroupId	Integer	分片id，如果是分片的错误，team和ip+port可以不出现
+teamId	Integer	组id，如果是team的错误，ip+port可以不出现
+ip	String	出错ip
+port	Integer	出错port
+failMsg	String	错误详情
+
+出参示例：{
+  "code": 2,
+  "msg": "fail",
+  "data": {
+    "failureList": [
+      {
+        "dbgroupId": 4,
+        "teamId": 1,
+        "ip": "10.47.167.100",
+        "port": 5501,
+        "failMsg": "xxxx"
+      },
+      {
+        "dbgroupId": 4,
+        "teamId": 1,
+        "ip": "10.47.167.100",
+        "port": 5501,
+        "failMsg": "xxxx"
+      }
+    ]
+  }
+}
+
+
+c.进度查询
+接口说明： 查询批量新增slaveDN进度。
+请求url：/open_api/insight/external/install/querybatchAddSlaveDNResult
+请求类型：GET
+入参字段说明：
+参数	类型	是否必填	描述
+taskId	String	是	任务id
+入参示例:无
+出参字段说明：
+参数	类型	描述
+code	Integer	1：成功；其他：失败
+msg	String	成功或者失败的描述信息
+data	Object	各分片安装进度详情
+duration	String	请求接口耗时,ms
+operationId	String	操作id
+data字段说明:
+参数	类型	描述
+totalResult	Integer	1-已全部完成，2-未全部完成
+records	Array	每一个个体的结果
+installLogPath	String	安装日志路径
+records字段说明:
+参数	类型	描述
+dbgroupId	Integer	分片id
+result	String	对于每一个个体的结果：success，running，failure
+teamId	Integer	teamId
+ip	String	ip
+port	Integer	端口
+failMsg	String	异常信息
+
+出参示例：
+{
+  "code": 1,
+  "msg": "success",
+  "data": {
+    "totalResult": 1,
+    "records": [
+      {
+        "dbgroupId": 3,
+        "result": "success"
+      },
+      {
+        "dbgroupId": 4,
+        "result": "running"
+      },
+      {
+        "dbgroupId": 5,
+        "result": "failure",
+        "teamId": 1,
+        "ip": "10.47.167.100",
+        "port": 5501,
+        "failMsg": "xxxx"
+      }
+    ]
+  },
+  "duration": "8",
+  "operationId": "1663557761502"
+}

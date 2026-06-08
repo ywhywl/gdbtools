@@ -151,7 +151,17 @@ func Run(argv []string) (int, error) {
 					if err != nil {
 						comparison.Error = err.Error()
 					} else {
-						comparison.PrivilegeDiff = diffPrivileges(sourcePrivileges, remapPrivilegeBundles(targetPrivileges, targetToSource))
+						if len(schemaPairs) == 0 {
+							comparison.PrivilegeDiff = diffPrivileges(
+								keepGlobalPrivilegesOnly(sourcePrivileges),
+								keepGlobalPrivilegesOnly(targetPrivileges),
+							)
+						} else {
+							comparison.PrivilegeDiff = diffPrivileges(
+								sourcePrivileges,
+								remapPrivilegeBundles(targetPrivileges, targetToSource),
+							)
+						}
 					}
 				}
 			}

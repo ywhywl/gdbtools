@@ -1,0 +1,85 @@
+3.1.1支持json的接口
+请求url：/open_api/insight/external/host/batchAddhost?coverInstall=0
+请求类型：POST
+入参字段说明：
+参数	类型	是否必填	描述
+coverInstall	Integer	否	是否覆盖安装，覆盖安装：1；不覆盖安装：0(不传默认为0)
+入参示例：
+{
+"coverInstall":0
+}
+
+入参字段说明：
+参数	类型	是否必填	描述
+roomName	String	是	机房名称
+ip	String	是	被纳管主机ip（可配置一个或多个ip（多个ip之间用英文逗号分隔）；连续ip使用-连接，起始IP-同网段截止IP中最后一段：例如10.0.0.11-20，代表10.0.0.11到10.0.0.20内所有连续ip）
+sshPort	Integer	是	SSH端口（范围：1-65535）
+superUser	String	是	用户名（用户名由1-32位数字、字母或下划线组成）
+superPwd	String	是	密码（base64加密）
+installPath	String	是	安装目录：installPath即在主机上安装组件时指定安装的路径（目录必须是主机的挂载点目录，且不能是挂载点子目录。其中/dev,/run,/sys/fs/cgroup为无用目录，不能使用。安装目录最小可用空间为20G）
+dataPath	String	是	数据目录：dataPath即对于dn组件，可以指定它的数据目录。其他组件不会使用此配置（目录必须是主机的挂载点目录，且不能是挂载点子目录。其中/dev,/run,/sys/fs/cgroup为无用目录，不能使用。支持多个路径，多个路径之间用|分隔，数据目录最小可用空间为1G）
+label	String	否	标签描述
+systemParameter	String	是	是否执行系统参数：0-否，1-是。设置是否执行系统参数是指设置主机服务器的操作系统内核参数，符合GoldenDB运行的要求。如果局方要求使用自己的内核参数，则由局方自行设定，该参数填0。
+
+入参示例：
+[{
+"roomName":"南京机房1",
+"ip":"10.229.32.71",
+"sshPort":22,
+"superUser":"root",
+"superPwd":"xxxx",
+"installPath":"/home",
+"dataPath":"/home|/boot",
+"label":"xxxx",
+"systemParameter":"1"
+},
+{
+"roomName":"南京机房1",
+"ip":"10.229.32.72",
+"sshPort":22,
+"superUser":"root",
+"superPwd":"xxxx",
+"installPath":"/home",
+"dataPath":"/home|/boot",
+"label":"xxxx",
+"systemParameter":"1"
+}]
+
+
+
+3.2查询纳管主机进度
+接口说明：纳管主机是异步接口，利用纳管主机返回taskId可以查询主机纳管进度
+请求url：/open_api/insight/external/host/querybatchAddHostResult?taskId=1
+请求类型：GET
+入参字段说明：
+参数	类型	是否必填	描述
+taskId	Integer	是	纳管主机传回的任务Id
+入参示例：
+{
+"taskId":1
+}
+出参字段说明：
+参数	类型	描述
+code	Integer	1：成功；2：失败
+msg	String	成功或者失败的描述信息
+data	Object	失败时的具体信息
+
+出参示例：
+{
+"code":1,
+"msg":"success",
+"data":{
+"result":"fail",
+"failedIp": ["10.229.43.205","10.229.45.203"],
+"installStatus":40,
+"errorCode":1001,
+"errorMsg":"Failed to manage the host. Please refer to the log for details:/home/goldendb..."
+}
+}
+data结构说明：
+参数	类型	描述
+result	String	success：纳管主机成功；fail：纳管主机失败；running:纳管主机进行中
+failedIp	String	发生异常的ip列表
+installStatus	Integer	纳管进度
+errorCode	Integer	纳管失败错误码,纳管进行中、成功不返回
+errorMsg	String	纳管失败错误信息，纳管进行中、成功不返回

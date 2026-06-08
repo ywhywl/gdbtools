@@ -44,6 +44,21 @@ class ScriptEntryTest(unittest.TestCase):
         self.assertIn("MYSQL_SCHEMA_COMPARE_INCONSISTENT_TARGETS=1", lines)
         self.assertIn("MYSQL_SCHEMA_COMPARE_EXIT_CODE=2", lines)
 
+    def test_privilege_only_output_hides_structure_section(self) -> None:
+        comparison = SCRIPT.TargetComparison(
+            target="target_a",
+            schema_pairs=[],
+            schema_diffs=[],
+            privilege_diff=SCRIPT.PrivilegeDiff(),
+            include_structure=False,
+            include_privileges=True,
+        )
+
+        lines = SCRIPT.render_text_target(comparison)
+
+        self.assertNotIn("  Structure diff: no differences", lines)
+        self.assertIn("  Privilege diff: no differences", lines)
+
 
 if __name__ == "__main__":
     unittest.main()

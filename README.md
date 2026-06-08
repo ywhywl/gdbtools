@@ -11,6 +11,7 @@ This repository also includes a Go CLI for MySQL structure and privilege compari
 - `AUTO_INCREMENT` value differences are ignored
 - `mysql_privilege_compare.py` compares global, database-level, and table-level privileges
 - Privilege comparison supports `user@host` exact matching or merged-by-user matching
+- In the Go CLI, global privileges are compared independently from schema mapping, while database-level and table-level privileges are compared only on matched schema pairs
 - Structure script supports `--source-schemas`, `--target-schemas`, and `--exclude-schemas`
 - Privilege script supports `--source-databases`, `--target-databases`, and `--exclude-databases`
 - Both scripts accept multiple targets from a single `--target-dsn` using `,`, `|`, or newlines
@@ -41,6 +42,8 @@ Or use the Go CLI:
 - For wildcard matching, selectors use Linux shell-style glob semantics such as `*`, `?`, and `[]`.
 - If a selector exactly matches an existing schema, database, or user, it is treated as an exact match first.
 - Old MySQL `LIKE` wildcards such as `%` and `_` are not treated as wildcards by the Go CLI.
+- When source and target schema names differ, schema-scoped privilege comparison depends on the schema pairs formed from `--source-schemas` and `--target-schemas`.
+- If the Go CLI cannot form any schema pair, it compares only global privileges and ignores database-level and table-level grants.
 - `--default-user` and `--default-password` apply to `--source-dsn` and every `--target-dsn` entry.
 - A single `--target-dsn` value can contain multiple DSNs separated by `,`, `|`, or newlines.
 - The structure script is [scripts/mysql_schema_compare.py](/Users/wenlongy/dev/src/gdbtools/scripts/mysql_schema_compare.py).
@@ -114,30 +117,19 @@ Go CLI options summary:
 - `--check` `all`, `structure`, or `privileges`
 - `--output-format` `text` or `json`
 
-## Structure Script
+Privilege comparison behavior in the Go CLI:
 
-```bash
-python3 scripts/mysql_schema_compare.py \
-  --default-user 'root' \
-  --default-password 'password' \
-  --source-dsn 'mysql://127.0.0.1:3306/' \
-  --target-dsn $'mysql://10.0.0.10:3306/|mysql://10.0.0.11:3306/' \
-  --source-schemas 'dbname_0' \
-  --target-schemas 'dbname_1,dbname_2' \
-  --exclude-schemas 'mysql,information_schema,performance_schema,sys'
-```
+1. Global privileges such as `GRANT SELECT ON *.*` are compared directly for the same user and do not depend on schema mapping.
+2. Database-level privileges such as `GRANT SELECT ON db_name.*` are compared only on matched schema pairs.
+3. Table-level privileges such as `GRANT SELECT ON db_name.orders` are compared only on matched schema pairs.
+4. If source `db0` is paired with target `db1`, the tool compares source grants on `db0` with target grants on `db1`.
+5. Grants on unrelated target schemas are ignored for schema-scoped privilege comparison, even if they reuse the same schema name as the source.
+6. If the Go CLI cannot form any schema pair, schema-scoped privileges are skipped and only global privileges are compared.
 
-## Privilege Script
+Example privilege mapping:
 
-```bash
-python3 scripts/mysql_privilege_compare.py \
-  --default-user 'root' \
-  --default-password 'password' \
-  --source-dsn 'mysql://127.0.0.1:3306/' \
-  --target-dsn $'mysql://10.0.0.10:3306/|mysql://10.0.0.11:3306/' \
-  --source-databases 'dbname_0' \
-  --target-databases 'dbname_1,dbname_2' \
-  --exclude-databases 'mysql,information_schema,performance_schema,sys' \
-  --exclude-users 'mysql.session,mysql.sys' \
-  --user-match-mode user
-```
+- Source selector `--source-schemas 'db0'`
+- Target selector `--target-schemas 'db*'`
+- If the selected target schema pair is `db0 -> db1`, source database-level privilege for `user1` on `db0` must match target database-level privilege for `user1` on `db1`
+- A target-side privilege for `user1` on some other schema such as `db0` does not satisfy the comparison for the `db0 -> db1` pair
+

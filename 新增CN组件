@@ -1,0 +1,135 @@
+5.2.1新增CN组件
+a.参数格式
+接口说明： 
+请求url：/open_api/insight/external/install/batchAddCN
+请求类型：type:post
+入参字段说明：
+参数	类型	是否必填	描述
+taskId	String	否	传taskId重试任务
+cnList	Array	是	cn列表
+parameterTemplateInfos	Array	否	组件参数模板列表，不传则使用默认模板
+clusterId	Integer	是	租户id
+
+cnList字段说明：
+参数	类型	是否必填	描述
+ip	String	是	待安装CN的主机IP
+port	Integer	否	CN组件的监听端口
+installUser	String	否	安装用户
+installPath	String	否	安装路径
+servicePort	Integer	否	表示安装CN之后绑定服务端口，没有则不默认绑定
+parameterTemplateInfos字段说明：
+参数	类型	是否必填	描述
+type	String	是	组件类型：CN、cluster,区分大小写，全词匹配
+templateName	String	是	模板名称
+入参示例:
+{
+  "clusterId": 1,
+"parameterTemplateInfos":[
+{
+"type":"CN",
+"templateName":"test.json"
+}],
+  "cnList": [
+    {
+      "ip": "127.0.0.1",
+      "port": 5501,
+      "installUser": "zxproxy1",
+      "installPath": "/data/gdb",
+      "servicePort": 8880
+    },
+    {
+      "ip": "127.0.0.1",
+      "port": 5502,
+      "installUser": "zxproxy1",
+      "installPath": "/data/gdb",
+      "servicePort": 8889
+    }
+  ]
+}
+出参字段说明：
+参数	类型	描述
+code	Integer	1：成功；其他：失败
+msg	String	成功或者失败的描述信息
+data	Object	失败时的具体信息
+duration	String	请求接口耗时,ms
+operationId	String	操作id
+结果成功：
+data字段说明:
+参数	类型	描述
+taskId	String 	批量增加proxy任务id
+结果失败：
+data字段说明:
+参数	类型	描述
+failureList	Array	失败详情
+failureList字段说明:
+参数	类型	描述
+ip	String	出错ip(错误和ip无关可能不返回)
+port	Integer	出错port(错误和port无关可能不返回)
+failMsg	String	错误详情
+
+出参示例：{
+  "code": 2,
+  "msg": "fail",
+  "data": {
+    "failureList": [
+      {
+        "ip": "10.47.167.100",
+        "port": 5501,
+        "failMsg": "xxxx"
+      },
+      {
+        "ip": "10.47.167.100",
+        "port": 5501,
+        "failMsg": "xxxx"
+      }
+    ]
+  }
+}
+
+
+c.结果查询
+接口说明： 查询批量新增proxy进度。
+请求url：/open_api/insight/external/install/querybatchAddCNResult
+请求类型：GET
+入参字段说明：
+参数	类型	是否必填	描述
+taskId	String	是	任务id
+入参示例:无
+
+出参字段说明：
+参数	类型	描述
+code	Integer	1：成功；其他：失败
+msg	String	成功或者失败的描述信息
+data	Object	各分片安装进度详情
+duration	String	请求接口耗时,ms
+operationId	String	操作id
+data字段说明:
+参数	类型	描述
+totalResult	Integer	1-已全部完成，2-未全部完成
+records	Array	每一个个体的结果
+installLogPath	String	安装日志路径
+records字段说明:
+参数	类型	描述
+result	String	对于每一个个体的结果：success，running，failure
+ip	String	ip
+port	Integer	端口
+failMsg	String	异常信息,错误时描述错误信息
+
+出参示例：
+{
+  "code": 1,
+  "msg": "success",
+  "data": {
+    "totalResult": 1,
+    "records": [
+      {
+        "ip": "10.47.167.100",
+        "port": 5501,
+        "failMsg": "xxxx"
+      }
+    ]
+  },
+  "duration": "8",
+  "operationId": "1663557761502"
+}
+

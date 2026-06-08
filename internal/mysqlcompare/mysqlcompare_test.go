@@ -214,6 +214,71 @@ func TestDiffPrivilegesUserModeReportsDifferentPrivilegesOnMappedSchemas(t *test
 	}
 }
 
+func TestKeepGlobalPrivilegesOnlyDropsSchemaScopedPrivileges(t *testing.T) {
+	source := ensureBundle(map[string]*PrivilegeBundle{}, "user1", "%", "user")
+	source.GlobalPrivileges.Add("SELECT")
+	source.DBPrivileges["db0"] = StringSet{}
+	source.DBPrivileges["db0"].Add("UPDATE")
+	source.TablePrivileges[TableScope{Schema: "db0", Table: "orders"}] = StringSet{}
+	source.TablePrivileges[TableScope{Schema: "db0", Table: "orders"}].Add("DELETE")
+
+	filtered := keepGlobalPrivilegesOnly(map[string]*PrivilegeBundle{"user1": source})
+	bundle := filtered["user1"]
+	if len(bundle.GlobalPrivileges.Sorted()) != 1 || bundle.GlobalPrivileges.Sorted()[0] != "SELECT" {
+		t.Fatalf("unexpected global privileges: %#v", bundle.GlobalPrivileges.Sorted())
+	}
+	if len(bundle.DBPrivileges) != 0 {
+		t.Fatalf("db privileges should be dropped: %#v", bundle.DBPrivileges)
+	}
+	if len(bundle.TablePrivileges) != 0 {
+		t.Fatalf("table privileges should be dropped: %#v", bundle.TablePrivileges)
+	}
+}
+
+func TestDiffPrivilegesWithoutSchemaPairsOnlyChecksGlobalPrivileges(t *testing.T) {
+	source := ensureBundle(map[string]*PrivilegeBundle{}, "user1", "%", "user")
+	source.GlobalPrivileges.Add("SELECT")
+	source.DBPrivileges["db0"] = StringSet{}
+	source.DBPrivileges["db0"].Add("UPDATE")
+
+	target := ensureBundle(map[string]*PrivilegeBundle{}, "user1", "%", "user")
+	target.GlobalPrivileges.Add("SELECT")
+	target.DBPrivileges["db9"] = StringSet{}
+	target.DBPrivileges["db9"].Add("ALL")
+
+	diff := diffPrivileges(
+		keepGlobalPrivilegesOnly(map[string]*PrivilegeBundle{"user1": source}),
+		keepGlobalPrivilegesOnly(map[string]*PrivilegeBundle{"user1": target}),
+	)
+	if diff.HasChanges() {
+		t.Fatalf("schema scoped privileges should be ignored without schema pairs: %#v", diff)
+	}
+}
+
+func TestDiffPrivilegesWithoutSchemaPairsStillReportsGlobalDifferences(t *testing.T) {
+	source := ensureBundle(map[string]*PrivilegeBundle{}, "user1", "%", "user")
+	source.GlobalPrivileges.Add("SELECT")
+	source.DBPrivileges["db0"] = StringSet{}
+	source.DBPrivileges["db0"].Add("UPDATE")
+
+	target := ensureBundle(map[string]*PrivilegeBundle{}, "user1", "%", "user")
+	target.GlobalPrivileges.Add("UPDATE")
+	target.DBPrivileges["db0"] = StringSet{}
+	target.DBPrivileges["db0"].Add("UPDATE")
+
+	diff := diffPrivileges(
+		keepGlobalPrivilegesOnly(map[string]*PrivilegeBundle{"user1": source}),
+		keepGlobalPrivilegesOnly(map[string]*PrivilegeBundle{"user1": target}),
+	)
+	if len(diff.ChangedIdentities) != 1 {
+		t.Fatalf("expected global privilege difference, got %#v", diff)
+	}
+	rendered := strings.Join(renderPrivilegeDiff(diff), "\n")
+	if strings.Contains(rendered, `"db_privileges"`) || strings.Contains(rendered, `"table_privileges"`) {
+		t.Fatalf("schema scoped privileges should not appear without schema pairs: %s", rendered)
+	}
+}
+
 func TestSplitMultiValueSupportsSemicolon(t *testing.T) {
 	items := splitMultiValue([]string{"BackupAdmin;ReplicationAdmin，dbadmin；dbproxy"})
 	if len(items) != 4 {

@@ -1,0 +1,436 @@
+5.1新增租户实例
+5.1.1新增租户实例
+接口说明：配置集群信息后调用接口组建集群
+请求url：/open_api/insight/external/tenant/createCluster
+请求类型：POST
+请求Content-type：application/json;charset=UTF-8
+响应Content-type：application/json;charset=UTF-8
+入参字段说明：
+参数	类型	是否必填	描述
+clusterInstallInfo	Object	是	集群配置
+configMode	Integer	是	安装参数的配置模式,
+0-自动推荐安装参数;
+1-用户自定义安装参数。
+clusterPlanInfos	Array	否	自动推荐的安装个数规划。
+在指定机房指定cn、dn、gtm（可选）个数，程序自动选择主机、自动规划用户名、安装目录等参数，执行安装。程序自动推荐的参数只有在安装完成后才能看到，且无法调整
+cnInstallList	List	是	CN节点的安装参数配置
+dnInstallList	List	是	DN分片的安装参数配置
+gtmInstallList	List	是	GTM分片的安装配置
+
+clusterInstallInfo结构说明：
+参数	类型	是否必填	描述
+clusterName	String	是	集群名称（集群名称必须为2-20个字符）
+clusterDesc	String	否	集群描述
+insUserPwd	String	是	业务访问用户名(super)密码,base64加密(长度在8-32之间，包含数字，包含大小写字母，不包含用户名，不包含用户名逆序)
+sysTemplate	Integer	否	设置系统参数。0-否，1-是。默认：1。
+设置系统参数是指设置主机服务器的操作系统内核参数，符合GoldenDB运行的要求。如果局方要求使用自己的内核参数，则由局方自行设定，该参数填0。
+haMode	Integer	是	高可用模式 
+0高可用 
+1高可靠
+2高可靠-单机房多节点部署
+3高可靠-同城双机房部署-只从本地选主
+4高可靠-同城双机房部署-本地优先，本地都异常跨AZ自动切换
+5强一致性-同城双机房部署-本地优先，本地都异常跨AZ自动切换
+6高可靠-机房优先级切换
+instanceType	Integer	是	实例类型 1单分片 0多分片
+dbgroupNum	Integer	否	分片数量（自动推荐安装必填，自定义安装此参数无效，自动获取dnInstallList中分片数量）
+charset	String	否	字符集，默认为utf8mb4。支持：utf8mb4、
+utf8、gb18030、gbk、latin1
+gtmUseMode	Integer	否	单分片不生效，多分片两种模式：1-使用系统级GTM；0-租户GTM，默认1。
+mode	Integer	否	安装模式：0-生产模式；1-测试模式，默认1
+parameterTemplateInfos	List	否	用于进行基线配置。不填，则自动使用默认基线模板。详细使用方法见5.1.1.1
+cnResourceUnit	String	否	CN组件资源规格配置。租户中所有CN都采用该配置。
+值定义：
+无限制：CN_unlimit
+4C8G:  CN_4C8G（自定义添加的值）
+值来源于“资源管理”-“组件规格配置”，默认只有“无限制”这种类型，其他类型需要自行创建。
+不填或为空，为“无限制”。
+其他值，需要校验该值在“组件规格配置”中是否存在，不存在报错。存在为合法取值。
+dnResourceUnit	String	否	DN组件资源规格配置。租户中所有DN都采用该配置。
+无限制：DN_unlimit
+其他说明同CN。
+gtmResourceUnit	String	否	GTM组件资源规格配置。租户中所有GTM都采用该配置。新增租户使用系统级gtm时，该参数不生效。
+无限制：GTM_unlimit
+其他说明同CN。
+masterAzName	String	否	指定主节点所在的AZ的名称,当前值不为空时忽略dbRole和gtmRole字段
+rootUserName	String	否	超权账户用户名，默认root
+remoteConnEnable	Integer	否	超权账户连接方式，0本地1远程，默认0
+storedSysGroupId	Integer	否	租户监控统计数据存放在系统租户上的分片ID,必须存在多分片系统租户且对应分片存在.
+此功能不包含在租户创建流程中,是租户创建成功后自动触发监控库创建,某些特殊异常情况下可能导致创建任务失败,请在Insight页面上查看和重试
+
+clusterPlanInfos结构说明：
+参数	类型	是否必填	描述
+roomName	String	是	机房名称
+cnNum	Integer	是	cn数量,需要在当前机房安装cn数量
+dnNum	Integer	否	dn数量，需要当前机房安装dn的数量.。使用此参数，默认机房只有1个team，dn放在这个team下。teamDnNum和dnNum只能二选一，不能都为空。teamDnNum和dnNum都不为空时，以teamDnNum为准
+teamDnNum	Array	否	指定机房team中DN数。team中dn数用逗号分割，有几个数字就有几个team，teamid由管理节点分配。分片最多6个team。为空时默认1个team
+gtmNum	Integer	否	gtm数量，需要在当前机房安装gtm数量（当gtmUseMode生效且为1时填写）
+cnInstallList结构说明：
+参数	类型	是否必填	描述
+ip	String	是	待安装CN的主机IP
+port	Integer	否	CN组件的监听端口
+installUser	String	否	安装用户名
+installPath	String	否	安装路径,具体CN安装目录，是:/installPath
+servicePort	Integer	否	CN绑定的服务端口
+templateName	String	否	应用于该CN的基线模板的名称
+dnInstallList结构说明：
+参数	类型	是否必填	描述
+dbgroupId	Integer	是	新增分片id
+teamList	Array	是	team列表
+teamList字段说明：
+参数	类型	是否必填	描述
+teamId	Integer	是	组id（只能在1-6，若单个分片内teamId都为0，则自动分配teamId，按1-6从小到大顺序依次分配。
+dnList	Array	是	DN列表
+dnList字段说明：
+参数	类型	是否必填	描述
+ip	String	是	所在主机ip
+port	Integer	否	DN端口
+adminPort	Integer	否	DN管理端口
+dbRole	Integer	否	DN角色 1为主 0为备 2为逻辑主。
+本地机房内必须要有一个DN角色为主，同城机房DN角色只能为备。异地有且只有一个逻辑主，其他DN为备。
+installUser	String	否	安装用户名
+installPath	String	否	安装路径，具体DN安装目录，是:/installPath
+dataPath	String	否	数据存储路径，具体DN数据目录，是:/dataPath
+templateName	String	否	应用于该DN的基线模板的名称
+logPath	String	否	日志全路径。日志目录,日志目录需要包含用户名，传参使用#username代替用户名位置,只能传入一个#username。1：不传或传入空则和dataPath一致。2.传参中包含用户名层级，则直接使用传参值，不做改变。3: 不包含用户名也不包含#username，会自动在传入目录后添加用户名层级，例:传入/home，用户名为zxdb1，实际目录为/home/zxdb1。4：包含#username,会直接替换成用户名,例:传入/home/#username，用户名为zxdb1，实际目录为/home/zxdb1。5：传入/home/#username/log,用户名为zxdb1,实际为/home/zxdb1/log
+gtmInstallList结构说明：
+参数	类型	是否必填	描述
+teamId	Integer	是	组id（只能在1-6，若单个分片内teamId都为0，则自动分配teamId，按1-6从小到大顺序依次分配。
+gtmList	Array	是	gtm列表
+gtmList结构说明：
+参数	类型	是否必填	描述
+ip	String	是	所在主机ip
+port	Integer	否	GTM端口
+gtmRole	Integer	否	GTM角色 1为主 0为备 2为逻辑主。
+本地机房内必须要有一个GTM角色为主，其他机房gtm角色只能为备。
+installUser	String	否	安装用户名
+installPath	String	否	安装路径，具体GTM安装目录，是:/installPath
+templateName	String	否	应用于该GTM的基线模板的名称
+入参示例：
+自动规划参数安装入参：
+{
+"configMode": 0,
+"clusterInstallInfo": {
+"clusterName":"cluster1",
+"clusterDesc":"xxxxxx",
+"insUserPwd": "ZGIxeEBOSisx", 
+"haMode": 0,
+"instanceType": 0,  
+"dbgroupNum": 1,
+"charset": "utf8mb4",
+"gtmUseMode":1,
+"mode":1,
+"cnResourceUnit":"CN_unlimit",
+"dnResourceUnit":"DN_unlimit",
+"gtmResourceUnit":"GTM_unlimit",
+"masterAzName":"南京机房1"
+},
+"clusterPlanInfos":[{
+"roomName":"南京机房1",
+"cnNum":1,
+"dnNum":1,
+"teamDnNum":[1,1],
+"gtmNum":1
+}]
+}
+
+自定义参数安装入参：
+{
+"clusterInstallInfo":{
+    "charset":"utf8mb4",
+    "clusterName":"cluster1",
+    "dbgroupNum":1,
+    "gtmUseMode":1,
+    "haMode":0,
+    "insUserPwd":"SW5zaWdodEAyMDE5",
+    "instanceType":"1",
+"sysTemplate":"1",
+"cnResourceUnit":"CN_unlimit",
+"dnResourceUnit":"DN_unlimit",
+"gtmResourceUnit":"GTM_unlimit",
+"masterAzName":"南京机房1"
+  },
+  "cnInstallList":[
+    {
+      "installPath":"/home/goldendb",
+      "installUser":"zxdbproxy1",
+      "ip":"127.0.0.1",
+      "port":6451,
+      "servicePort":8880
+    }
+  ],
+  "configMode":1,
+  "dnInstallList":[
+    {
+      "dbgroupId":1,
+      "teamList":[
+        {
+          "dnList":[
+            {
+              "dataPath":"/home/goldendb",
+              "dbRole":1,
+              "installPath":"/home/goldendb",
+              "installUser":"zxdb1",
+"logPath": "/home/gdb/zxdb1/log",
+              "ip":"127.0.0.1",
+              "port":5501
+            },
+            {
+              "dataPath":"/home/goldendb",
+              "dbRole":0,
+              "installPath":"/home/goldendb",
+              "installUser":"zxdb1",
+              "ip":"127.0.0.1",
+              "port":5501
+            }
+          ],
+          "teamId":1
+        }
+      ]
+    }
+  ],
+  "gtmInstallList":[
+    {
+      "gtmList":[
+        {
+          "installPath":"/home/goldendb",
+          "installUser":"zxgtm1",
+          "ip":"127.0.0.1",
+          "port":5501,
+          "gtmRole":1
+        }
+      ],
+      "teamId":1
+    }
+  ]
+}
+
+出参字段说明：
+参数	类型	描述	备注
+msg	String	响应描述	成功为success
+失败时，描述具体失败原因
+code	Integer	状态码	1-成功
+2-失败（不可控）
+data	Object	响应的具体数据结构	
+出参示例：
+成功：
+{
+"code":1,
+  "msg":"success",
+  "data":null
+}
+失败：
+{
+"code":11,
+  "msg":"Invalid parameter",
+  "data":{
+  }
+}
+1.基线配置功能使用说明
+parameterTemplateInfos结构说明：
+参数	类型	是否必填	描述
+type	String	是	该基线的类型。可取值：DN、CN、GTM、GLOBAL（该类型指代租户级基线）
+templateName	String	是	该基线模板的名称
+1.使用parameterTemplateInfos字段对组件进行批量配置。
+入参示例：
+{
+    "clusterInstallInfo":{
+       ...略...
+    },
+    "cnInstallList":[
+        ...略...
+    ],
+    "configMode":1,
+    "dnInstallList":[
+        ...略...
+    ],
+    "gtmInstallList":[
+       ...略...
+],
+"parameterTemplateInfos": [
+    {
+      "type": "DN",
+      "templateName": "custom_dn1.json"
+    },
+    {
+      "type": "CN",
+      "templateName": "custom_cn1.json"
+    },
+    {
+      "type": "GTM",
+      "templateName": "custom_gtm1.json"
+    },
+    {
+      "type": "GLOBAL",
+      "templateName": "custom_cluster.json"
+    }
+  ]
+}
+其中，“custom_dn1.json”将会应用于本次请求的所有dn实例，“custom_cn1.json”将会应用于本次请求的所有cn实例，以此类推。“custom_cluster.json”将会应用于该租户集群，并对之后在该租户集群下新增的组件生效。
+2.使用单个组件的templateName字段进行个别组件的基线配置
+以1中的入参为例，假设有另一个DN基线，其名称为“custom_dn2.json”，并要将该基线应用于本次新增请求下的某个dn节点，则入参可以为：
+{
+  "clusterInstallInfo": {
+...略...
+},
+  "cnInstallList": [
+...略...
+],
+  "configMode": 1,
+  "dnInstallList": [
+    {
+      "dbgroupId": 1,
+      "teamList": [
+        {
+          "dnList": [
+            {
+              "dataPath": "/home/goldendb",
+              "dbRole": 1,
+              "installPath": "/home/goldendb",
+              "installUser": "db1",
+              "ip": "127.0.0.1",
+              "port": 5502,
+              "templateName": "custom_dn2.json"
+            },
+            {
+              "dataPath": "/home/goldendb",
+              "dbRole": 0,
+              "installPath": "/home/goldendb",
+              "installUser": "db2",
+              "ip": "127.0.0.1",
+              "port": 5503
+            },
+            {
+              "dataPath": "/home/goldendb",
+              "dbRole": 0,
+              "installPath": "/home/goldendb",
+              "installUser": "db3",
+              "ip": "127.0.0.1",
+              "port": 5504
+            }
+          ],
+          "teamId": 1
+        }
+      ]
+    }
+  ],
+  "gtmInstallList": [
+   ...略...
+],
+  "parameterTemplateInfos": [
+    {
+      "type": "DN",
+      "templateName": "custom_dn1.json"
+    },
+    {
+      "type": "GLOBAL",
+      "templateName": "custom_cluster.json"
+    }
+
+  ]
+}
+则在本次新增请求中，“custom_dn2.json”将会应用于“db1”，“custom_dn1.json”将会应用于其余的“db2”以及“db3”。
+
+5.1.2查询新增租户进度
+接口说明：组建集群是异步接口，用taskId查询组建进度。
+请求url：/open_api/insight/external/tenant/getInstallClusterProcess?taskId=1
+请求类型：GET
+请求Content-type：application/json;charset=UTF-8
+响应Content-type：application/json;charset=UTF-8
+入参字段说明：
+参数	类型	是否	描述
+taskId	Integer	是	组建集群异步返回的taskId
+
+
+入参示例：
+{
+"taskId":1
+}
+
+出参字段说明：
+参数	类型	描述	备注
+msg	String	响应描述	成功为success
+失败时，描述具体失败原因
+code	int	状态码	1-成功
+2-失败（不可控）
+data	Object	响应的具体数据结构	
+出参示例：
+"data":{
+"process":20,
+"result":"fail",
+"errorCode":2001,
+"errorMsg":"组件安装失败"
+}
+data结构说明：
+参数	类型	描述
+process	Integer	组建集群完成进度(%)
+result	String	组建集群结果：running：组建集群进行中；success：组建集群成功；fail：组建集群失败
+errorCode	Integer	组建集群失败时错误码,组建进行中、成功不返回
+errorMsg	String	组建集群失败时错误信息,组建进行中、成功不返回
+
+出参示例：
+进行中：
+{
+"code":1,
+"msg":"success",
+"data":{
+"process":22,
+"result":"running"
+}
+}
+
+成功：
+{
+"code":1,
+"msg":"success",
+"data":{
+"process":100,
+"result":"success"
+}
+}
+失败：
+{
+"code":1,
+"msg":"success",
+"data":{
+"process":50,
+"result":"fail",
+"errorCode":1021,
+"errorMsg":"install failed，please review the log：10.10.10.10:/home/goldendb/insight/scripts/install/log/onekey_install.log"
+}
+}
+
+5.1.3新增集群重试接口
+请求url：/open_api/insight/external/tenant/createClusterRetry
+请求类型：POST
+请求Content-type：application/json;charset=UTF-8
+响应Content-type：application/json;charset=UTF-8
+入参字段说明：
+参数	类型	是否必填	描述
+taskId	Integer	是	组建集群异步返回的taskId
+入参示例：
+{
+"taskId":1
+}
+
+出参字段说明：
+参数	类型	描述	备注
+code	Integer	状态码	1：成功
+x：失败（通用接口的错误码）
+msg	String	响应描述	成功为success
+失败时，与错误码对应描述
+data	Array	响应的具体数据结构	用户列表查询结果
+出参示例：
+成功：
+{
+"code":1, 
+"msg":"success", 
+"data":null
+}
+
+失败：
+{
+"code":x, 
+"msg":"fail", 
+"data":{}
+}

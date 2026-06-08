@@ -213,6 +213,17 @@ func diffPrivileges(sourceBundles, targetBundles map[string]*PrivilegeBundle) Pr
 	}
 }
 
+func keepGlobalPrivilegesOnly(bundles map[string]*PrivilegeBundle) map[string]*PrivilegeBundle {
+	filtered := map[string]*PrivilegeBundle{}
+	for key, bundle := range bundles {
+		cloned := newPrivilegeBundle(bundle.Identity)
+		cloned.GlobalPrivileges.Update(bundle.GlobalPrivileges.Sorted())
+		cloned.Hosts.Update(bundle.Hosts.Sorted())
+		filtered[key] = cloned
+	}
+	return filtered
+}
+
 func columnToMap(column ColumnMeta) map[string]any {
 	return map[string]any{
 		"ordinal_position":   column.OrdinalPosition,

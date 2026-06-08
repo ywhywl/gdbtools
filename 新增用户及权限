@@ -1,0 +1,63 @@
+6.1新增用户及权限
+接口说明：
+请求url：/open_api/insight/external/addDBUserAndGrant
+请求类型： POST
+请求Content-type：application/json;charset=UTF-8
+响应Content-type：application/json;
+
+入参说明
+参数	类型	是否必填	描述
+clusterId	Integer	是	租户
+userName	String		用户名
+userHost	String		客户端IP
+userPasswd	String		密码
+grantList	Array		增加权限的权限语句
+remarks	String		备注
+
+入参示例：
+[
+{
+"clusterId":1,
+"userName":"admin",
+"userHost":"%",
+"userPasswd":"ZGIxeEBOSisx",
+"grantList":["GRANT SELECT ON `mysql`.* TO `admin`@`%`", "GRANT SELECT ON 			`performance_schema`.* TO `admin`@`%`"],
+"remarks":"备注"
+},
+{
+"clusterId":1,
+"userName":"myawr",
+"userHost":"%",
+"userPasswd":"ZGIxeEBOSisx",
+"grantList":["GRANT all ON *.* TO `dbmgr`@`%`"
+"remarks":"备注"
+}
+]
+
+出参字段说明：
+参数	类型	描述	备注
+msg	String	响应描述	成功为success
+失败时，描述具体失败原因
+code	Integer	状态码	1-成功
+2-未完成
+3-失败
+data	Object	响应的具体数据结构	
+出参示例：
+{
+"code": 2,  
+ "msg": "fail",
+"data": [{   
+   "code": 2,  
+"msg":"add user fail,user is exist ,but password error", 
+   "data": {        
+     "clusterId": 1,
+    "userName": "admin",
+    "userHost": "%",
+    "userPasswd": "ZGIxeEBOSisx",
+    "remarks": "备注",
+    "grantList": [
+      "GRANT SELECT ON `mysql`.* TO `admin`@`%`"
+     ]
+    }
+  }]
+}
