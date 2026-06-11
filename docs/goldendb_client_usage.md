@@ -1,7 +1,7 @@
 # GoldenDB 统一接口操作客户端
 
 客户端实现位置：
-- [pkg/goldendb](/Users/wenlongy/dev/src/gdbtools/pkg/goldendb)
+- [pkg/goldendb](../pkg/goldendb)
 
 ## 能力
 

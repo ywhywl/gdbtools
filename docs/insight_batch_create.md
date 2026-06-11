@@ -97,6 +97,9 @@ DN `teamId` 映射：
 | 参数 | 说明 |
 | --- | --- |
 | `--api` | Insight 地址，必填 |
+| `--insight-user` | Insight 登录用户名，必填 |
+| `--insight-password` | Insight 登录密码明文 |
+| `--insight-password-b64` | Insight 登录密码 base64 |
 | `--csv` | CSV 文件路径，必填 |
 | `--prefix` | 安装用户名前缀，默认 `nu` |
 | `--base-path` | 安装根目录，默认 `/data/goldendb` |
@@ -118,11 +121,20 @@ DN `teamId` 映射：
 | `--output` | 将结构化结果写入 JSON 文件 |
 | `--format` | 输出格式：`json` 或 `text` |
 
+鉴权说明：
+
+- 所有请求头都会带上：
+  - `username = --insight-user`
+  - `password = base64(--insight-password)` 或 `--insight-password-b64`
+- `--ins-user-pwd` / `--ins-user-pwd-base64` 不是 Insight 密码，而是创建集群时写入请求体的业务用户密码
+
 ## 使用示例
 
 ```bash
 go run ./cmd/insight-batch-create \
   --api 10.0.0.10:8444 \
+  --insight-user admin \
+  --insight-password 'insight-password' \
   --csv ./clusters.csv \
   --ins-user-pwd 'plain-password' \
   --wait-completion \
@@ -134,6 +146,8 @@ go run ./cmd/insight-batch-create \
 ```bash
 go run ./cmd/insight-batch-create \
   --api 10.0.0.10:8444 \
+  --insight-user admin \
+  --insight-password 'insight-password' \
   --csv ./clusters.csv \
   --ins-user-pwd 'plain-password' \
   --dry-run

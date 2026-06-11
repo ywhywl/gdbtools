@@ -16,6 +16,7 @@ import (
 
 type args struct {
 	Input              string
+	Auth               insightopen.AuthFlags
 	DefaultPort        string
 	DefaultInstallUser string
 	DefaultInstallPath string
@@ -40,6 +41,7 @@ func Run(argv []string) (int, error) {
 	fs.IntVar(&parsed.PollTimeout, "poll-timeout", 3600, "轮询超时")
 	fs.BoolVar(&parsed.VerifySSL, "verify-ssl", false, "启用 SSL 证书校验；默认关闭")
 	fs.BoolVar(&parsed.OutputJSON, "output-json", false, "输出 JSON")
+	insightopen.AddAuthFlags(fs, &parsed.Auth)
 	if err := fs.Parse(argv); err != nil {
 		return 2, err
 	}
@@ -61,7 +63,11 @@ func Run(argv []string) (int, error) {
 	itemResults := make([]map[string]any, 0, len(normalized))
 
 	for _, group := range grouped {
-		client, err := insightopen.NewClient(group.APIBase, !parsed.VerifySSL)
+		auth, err := insightopen.ResolveAuth(parsed.Auth)
+		if err != nil {
+			return 2, err
+		}
+		client, err := insightopen.NewClient(group.APIBase, !parsed.VerifySSL, auth)
 		if err != nil {
 			return 2, err
 		}

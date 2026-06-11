@@ -58,6 +58,9 @@ JSON 示例：
 | 参数 | 说明 |
 | --- | --- |
 | `--api` | Insight 地址，必填 |
+| `--insight-user` | Insight 登录用户名，必填 |
+| `--insight-password` | Insight 登录密码明文 |
+| `--insight-password-b64` | Insight 登录密码 base64 |
 | `--input` | 输入文件路径，必填 |
 | `--ssh-port` | SSH 端口，默认 `22` |
 | `--ssh-user` | SSH 用户名，必填 |
@@ -72,6 +75,7 @@ JSON 示例：
 
 注意：
 
+- 必须提供 Insight 鉴权参数，鉴权头为 `username/password`
 - 如果未显式提供 `--ssh-password` 且未修改 `--ssh-password-b64`，命令会使用默认测试值 `c2VjcmV0`
 
 ## 使用示例
@@ -79,6 +83,8 @@ JSON 示例：
 ```bash
 go run ./cmd/insight-batch-onboard-hosts \
   --api 10.0.0.10:8444 \
+  --insight-user admin \
+  --insight-password 'insight-password' \
   --input ./hosts.csv \
   --ssh-user root \
   --ssh-password 'plain-password' \

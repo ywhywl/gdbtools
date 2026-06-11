@@ -64,6 +64,9 @@ insight_addr,cluster_name,template_name,dbgroup_name,team_id,ip,port,admin_port,
 | 参数 | 说明 |
 | --- | --- |
 | `--input` | 输入文件路径，必填 |
+| `--insight-user` | Insight 登录用户名，必填 |
+| `--insight-password` | Insight 登录密码明文 |
+| `--insight-password-b64` | Insight 登录密码 base64 |
 | `--default-port` | 默认 DN 端口 |
 | `--default-admin-port` | 默认 DN 管理端口 |
 | `--default-install-user` | 默认安装用户 |
@@ -77,6 +80,8 @@ insight_addr,cluster_name,template_name,dbgroup_name,team_id,ip,port,admin_port,
 
 说明：
 
+- 所有请求头统一带 `username/password`
+- `password` 取 Insight 登录密码的 base64
 - 若未提供 `dbgroup_id`，命令会使用 `dbgroup_name` 查询并回填
 - 相同 `dbgroup_id + team_id + backupTask` 的行会被合并到同一个 `teamList` 项中
 
@@ -100,6 +105,8 @@ insight_addr,cluster_name,template_name,dbgroup_name,team_id,ip,port,admin_port,
 ```bash
 go run ./cmd/insight-batch-add-dn \
   --input ./batch_add_dn.csv \
+  --insight-user admin \
+  --insight-password 'insight-password' \
   --default-admin-port 5501 \
   --output-json
 ```

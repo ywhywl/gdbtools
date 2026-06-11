@@ -43,6 +43,7 @@ func Run(args []string) (int, error) {
 	var pollTimeout int
 	var verifySSL bool
 	var outputJSON bool
+	var authFlags insightopen.AuthFlags
 
 	fs.StringVar(&api, "api", "", "Insight API 地址")
 	fs.StringVar(&input, "input", "", "输入文件路径 (CSV 或 JSON)")
@@ -56,6 +57,7 @@ func Run(args []string) (int, error) {
 	fs.IntVar(&pollTimeout, "poll-timeout", 3600, "轮询超时(秒)")
 	fs.BoolVar(&verifySSL, "verify-ssl", false, "启用 SSL 证书校验")
 	fs.BoolVar(&outputJSON, "output-json", false, "以 JSON 格式输出结果")
+	insightopen.AddAuthFlags(fs, &authFlags)
 
 	if err := fs.Parse(args); err != nil {
 		return 2, err
@@ -81,7 +83,12 @@ func Run(args []string) (int, error) {
 		return 1, fmt.Errorf("输入文件中没有有效的服务器数据")
 	}
 
-	client, err := insightopen.NewClient(api, !verifySSL)
+	auth, err := insightopen.ResolveAuth(authFlags)
+	if err != nil {
+		return 2, err
+	}
+
+	client, err := insightopen.NewClient(api, !verifySSL, auth)
 	if err != nil {
 		return 2, err
 	}

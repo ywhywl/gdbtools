@@ -12,15 +12,33 @@
 
 这些命令都采用独立二进制入口，适合单独执行，也适合被平台流程或自动化脚本串联调用。
 
+## 统一鉴权
+
+这 5 个命令统一使用 Insight 登录信息做请求头鉴权：
+
+- `--insight-user`
+- `--insight-password`
+- `--insight-password-b64`
+
+请求头格式：
+
+- `username = --insight-user`
+- `password = base64(--insight-password)` 或 `--insight-password-b64`
+
+注意：
+
+- 这套鉴权参数适用于所有命令
+- 某些业务命令还会额外有“数据库用户密码”或“业务用户密码”，这些不是 Insight 密码
+
 ## 命令清单
 
 | 场景 | 命令 | 文档 |
 | --- | --- | --- |
-| 主机纳管 | `insight-batch-onboard-hosts` | [insight_batch_onboard_hosts.md](/Users/wenlongy/dev/src/gdbtools/docs/insight_batch_onboard_hosts.md:1) |
-| 批量建集群 | `insight-batch-create` | [insight_batch_create.md](/Users/wenlongy/dev/src/gdbtools/docs/insight_batch_create.md:1) |
-| 批量新增 CN | `insight-batch-add-cn` | [insight_batch_add_cn.md](/Users/wenlongy/dev/src/gdbtools/docs/insight_batch_add_cn.md:1) |
-| 批量新增 DN | `insight-batch-add-dn` | [insight_batch_add_dn.md](/Users/wenlongy/dev/src/gdbtools/docs/insight_batch_add_dn.md:1) |
-| 初始化管理员用户 | `insight-create-dbmgr` | [insight_create_dbmgr.md](/Users/wenlongy/dev/src/gdbtools/docs/insight_create_dbmgr.md:1) |
+| 主机纳管 | `insight-batch-onboard-hosts` | [insight_batch_onboard_hosts.md](insight_batch_onboard_hosts.md) |
+| 批量建集群 | `insight-batch-create` | [insight_batch_create.md](insight_batch_create.md) |
+| 批量新增 CN | `insight-batch-add-cn` | [insight_batch_add_cn.md](insight_batch_add_cn.md) |
+| 批量新增 DN | `insight-batch-add-dn` | [insight_batch_add_dn.md](insight_batch_add_dn.md) |
+| 初始化管理员用户 | `insight-create-dbmgr` | [insight_create_dbmgr.md](insight_create_dbmgr.md) |
 
 ## 一、主机纳管
 
@@ -87,6 +105,7 @@ go run ./cmd/insight-batch-create --help
 - 自动生成 `cnInstallList` 和 `dnInstallList`
 - 支持 `dry-run`
 - 支持失败重试和安装进度轮询
+- `--ins-user-pwd` / `--ins-user-pwd-base64` 是业务用户密码，不是 Insight 鉴权密码
 
 典型输出：
 
@@ -207,12 +226,13 @@ go run ./cmd/insight-create-dbmgr --help
 - `cluster_name`
 - `user_name`
 - `user_host`
-- `password` 或 `password_b64`
+- `db_user_password` 或 `db_user_password_b64`
 - `grant_file`
 
 关键特点：
 
 - 自动通过 `cluster_name` 查询 `clusterId`
+- 请求头使用 Insight 登录鉴权
 - 支持两种 `grant-file` 格式：
   - JSON 数组
   - `{"grantList":[...]}`
@@ -254,13 +274,13 @@ go run ./cmd/insight-create-dbmgr --help
 
 命令入口位于：
 
-- [cmd/insight-batch-onboard-hosts](/Users/wenlongy/dev/src/gdbtools/cmd/insight-batch-onboard-hosts:1)
-- [cmd/insight-batch-create](/Users/wenlongy/dev/src/gdbtools/cmd/insight-batch-create:1)
-- [cmd/insight-batch-add-cn](/Users/wenlongy/dev/src/gdbtools/cmd/insight-batch-add-cn:1)
-- [cmd/insight-batch-add-dn](/Users/wenlongy/dev/src/gdbtools/cmd/insight-batch-add-dn:1)
-- [cmd/insight-create-dbmgr](/Users/wenlongy/dev/src/gdbtools/cmd/insight-create-dbmgr:1)
+- [cmd/insight-batch-onboard-hosts](../cmd/insight-batch-onboard-hosts)
+- [cmd/insight-batch-create](../cmd/insight-batch-create)
+- [cmd/insight-batch-add-cn](../cmd/insight-batch-add-cn)
+- [cmd/insight-batch-add-dn](../cmd/insight-batch-add-dn)
+- [cmd/insight-create-dbmgr](../cmd/insight-create-dbmgr)
 
 公共实现位于：
 
-- [internal/insightopen](/Users/wenlongy/dev/src/gdbtools/internal/insightopen:1)
-- [internal/insightinput](/Users/wenlongy/dev/src/gdbtools/internal/insightinput:1)
+- [internal/insightopen](../internal/insightopen)
+- [internal/insightinput](../internal/insightinput)

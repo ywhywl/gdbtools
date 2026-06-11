@@ -50,6 +50,7 @@ type normalizedRow struct {
 type runArgs struct {
 	API            string
 	CSV            string
+	Auth           insightopen.AuthFlags
 	Prefix         string
 	BasePath       string
 	InsUserPwd     string
@@ -85,7 +86,12 @@ func Run(args []string) (int, error) {
 		return 3, nil
 	}
 
-	client, err := insightopen.NewClient(parsedArgs.API, parsedArgs.NoVerify)
+	auth, err := insightopen.ResolveAuth(parsedArgs.Auth)
+	if err != nil {
+		return 3, renderTopLevelError(err)
+	}
+
+	client, err := insightopen.NewClient(parsedArgs.API, parsedArgs.NoVerify, auth)
 	if err != nil {
 		return 3, renderTopLevelError(err)
 	}
@@ -191,6 +197,7 @@ func parseArgs(args []string) (runArgs, error) {
 	fs.BoolVar(&parsed.DryRun, "dry-run", false, "只渲染请求体")
 	fs.StringVar(&parsed.Output, "output", "", "写入 JSON 文件")
 	fs.StringVar(&parsed.Format, "format", "json", "输出格式")
+	insightopen.AddAuthFlags(fs, &parsed.Auth)
 
 	verifySSL := false
 	fs.BoolVar(&verifySSL, "verify-ssl", false, "启用 SSL 证书校验")

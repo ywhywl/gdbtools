@@ -23,9 +23,10 @@ type Client struct {
 	baseURL    string
 	httpClient *http.Client
 	noVerify   bool
+	auth       Auth
 }
 
-func NewClient(api string, noVerify bool) (*Client, error) {
+func NewClient(api string, noVerify bool, auth Auth) (*Client, error) {
 	baseURL, err := NormalizeAPIBase(api)
 	if err != nil {
 		return nil, err
@@ -45,6 +46,7 @@ func NewClient(api string, noVerify bool) (*Client, error) {
 			Transport: transport,
 		},
 		noVerify: noVerify,
+		auth:     auth,
 	}, nil
 }
 
@@ -93,6 +95,12 @@ func (c *Client) doJSON(ctx context.Context, method, requestURL string, payload 
 	}
 	for key, value := range requestHeaders {
 		req.Header.Set(key, value)
+	}
+	if c.auth.Username != "" {
+		req.Header.Set("username", c.auth.Username)
+	}
+	if c.auth.PasswordB64 != "" {
+		req.Header.Set("password", c.auth.PasswordB64)
 	}
 
 	resp, err := c.httpClient.Do(req)

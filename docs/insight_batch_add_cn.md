@@ -54,6 +54,9 @@ insight_addr,cluster_name,template_name,ip,port,install_user,install_path,servic
 | 参数 | 说明 |
 | --- | --- |
 | `--input` | 输入文件路径，必填 |
+| `--insight-user` | Insight 登录用户名，必填 |
+| `--insight-password` | Insight 登录密码明文 |
+| `--insight-password-b64` | Insight 登录密码 base64 |
 | `--default-port` | 默认 CN 端口 |
 | `--default-install-user` | 默认安装用户 |
 | `--default-install-path` | 默认安装路径 |
@@ -65,11 +68,18 @@ insight_addr,cluster_name,template_name,ip,port,install_user,install_path,servic
 
 如果某行未提供 `port/install_user/install_path/service_port`，会使用对应的默认参数填充。
 
+鉴权说明：
+
+- 请求头统一带 `username/password`
+- `password` 取 Insight 登录密码的 base64
+
 ## 使用示例
 
 ```bash
 go run ./cmd/insight-batch-add-cn \
   --input ./batch_add_cn.csv \
+  --insight-user admin \
+  --insight-password 'insight-password' \
   --default-port 0 \
   --poll-interval 5 \
   --output-json

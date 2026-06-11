@@ -12,7 +12,7 @@
 
 如果需要看字段说明、返回结构或高级参数，去看总览文档：
 
-- [insight_tools_overview.md](/Users/wenlongy/dev/src/gdbtools/docs/insight_tools_overview.md:1)
+- [insight_tools_overview.md](insight_tools_overview.md)
 
 ## 一、主机纳管
 
@@ -29,6 +29,8 @@ room_a,10.0.0.22,/data/gdb,/data/gdb/data,1,shanghai
 ```bash
 go run ./cmd/insight-batch-onboard-hosts \
   --api 10.0.0.10:8444 \
+  --insight-user admin \
+  --insight-password 'insight-password' \
   --input ./hosts.csv \
   --ssh-user root \
   --ssh-password 'your-password' \
@@ -54,6 +56,8 @@ num,cluster_name,cluster_group_name,M,S,TS,LS,OS,server_type
 ```bash
 go run ./cmd/insight-batch-create \
   --api 10.0.0.10:8444 \
+  --insight-user admin \
+  --insight-password 'insight-password' \
   --csv ./clusters.csv \
   --ins-user-pwd 'your-db-password' \
   --wait-completion \
@@ -65,6 +69,8 @@ go run ./cmd/insight-batch-create \
 ```bash
 go run ./cmd/insight-batch-create \
   --api 10.0.0.10:8444 \
+  --insight-user admin \
+  --insight-password 'insight-password' \
   --csv ./clusters.csv \
   --ins-user-pwd 'your-db-password' \
   --dry-run
@@ -92,10 +98,12 @@ go run ./cmd/insight-batch-create \
 ```bash
 go run ./cmd/insight-create-dbmgr \
   --api 10.0.0.10:8444 \
+  --insight-user admin \
+  --insight-password 'insight-password' \
   --cluster-name prod_cluster_a \
   --user-name dbmgr \
   --user-host '%' \
-  --password 'your-db-password' \
+  --db-user-password 'your-db-password' \
   --grant-file ./grants.json
 ```
 
@@ -118,6 +126,8 @@ insight_addr,cluster_name,template_name,ip,port,install_user,install_path,servic
 ```bash
 go run ./cmd/insight-batch-add-cn \
   --input ./batch_add_cn.csv \
+  --insight-user admin \
+  --insight-password 'insight-password' \
   --default-port 0 \
   --poll-interval 5 \
   --output-json
@@ -141,6 +151,8 @@ insight_addr,cluster_name,template_name,dbgroup_name,team_id,ip,port,admin_port,
 ```bash
 go run ./cmd/insight-batch-add-dn \
   --input ./batch_add_dn.csv \
+  --insight-user admin \
+  --insight-password 'insight-password' \
   --default-admin-port 5501 \
   --output-json
 ```
@@ -165,17 +177,19 @@ go run ./cmd/insight-batch-add-dn \
 ## 常见注意事项
 
 - `api` 或 `insight_addr` 可以写成 `10.0.0.10:8444`
+- 所有命令都必须提供 `--insight-user`
+- 所有命令都必须提供 `--insight-password` 或 `--insight-password-b64`
 - 非本地地址默认会优先走 `https`
 - 如果目标环境证书不完整，可以加 `--no-verify` 或不要开启 `--verify-ssl`
 - `batch-create` 必须提供 `--ins-user-pwd` 或 `--ins-user-pwd-base64`
-- `create-dbmgr` 必须提供 `--password` 或 `--password-b64`
+- `create-dbmgr` 必须提供 `--db-user-password` 或 `--db-user-password-b64`
 - `batch-add-dn` 必须提供 `dbgroup_name` 或 `dbgroup_id`
 
 ## 相关文档
 
-- [insight_tools_overview.md](/Users/wenlongy/dev/src/gdbtools/docs/insight_tools_overview.md:1)
-- [insight_batch_onboard_hosts.md](/Users/wenlongy/dev/src/gdbtools/docs/insight_batch_onboard_hosts.md:1)
-- [insight_batch_create.md](/Users/wenlongy/dev/src/gdbtools/docs/insight_batch_create.md:1)
-- [insight_create_dbmgr.md](/Users/wenlongy/dev/src/gdbtools/docs/insight_create_dbmgr.md:1)
-- [insight_batch_add_cn.md](/Users/wenlongy/dev/src/gdbtools/docs/insight_batch_add_cn.md:1)
-- [insight_batch_add_dn.md](/Users/wenlongy/dev/src/gdbtools/docs/insight_batch_add_dn.md:1)
+- [insight_tools_overview.md](insight_tools_overview.md)
+- [insight_batch_onboard_hosts.md](insight_batch_onboard_hosts.md)
+- [insight_batch_create.md](insight_batch_create.md)
+- [insight_create_dbmgr.md](insight_create_dbmgr.md)
+- [insight_batch_add_cn.md](insight_batch_add_cn.md)
+- [insight_batch_add_dn.md](insight_batch_add_dn.md)

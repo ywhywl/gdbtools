@@ -2,10 +2,10 @@
 
 ## 目标
 
-把 [ZXCLOUDGoldenDB分布式数据库通用rest接口操作指南.txt](/Users/wenlongy/dev/src/gdbtools/ZXCLOUDGoldenDB分布式数据库通用rest接口操作指南.txt) 抽象成一套可复用的工具接口集，方便后续由程序、Agent 或平台统一调取。
+把 [ZXCLOUDGoldenDB分布式数据库通用rest接口操作指南.txt](../ZXCLOUDGoldenDB分布式数据库通用rest接口操作指南.txt) 抽象成一套可复用的工具接口集，方便后续由程序、Agent 或平台统一调取。
 
 机器可读注册表见：
-- [goldendb_tool_interface_set.yaml](/Users/wenlongy/dev/src/gdbtools/docs/goldendb_tool_interface_set.yaml)
+- [goldendb_tool_interface_set.yaml](goldendb_tool_interface_set.yaml)
 
 ## 统一约定
 
