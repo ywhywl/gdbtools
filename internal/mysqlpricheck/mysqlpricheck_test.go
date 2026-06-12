@@ -80,14 +80,33 @@ func TestRunRulesFindsInconsistentHosts(t *testing.T) {
 	}
 }
 
-func TestRunRulesFindsMultiSchemaAndTableLevel(t *testing.T) {
-	snapshot := newPrivilegeSnapshot(UserHost{User: "app", Host: "%"})
-	snapshot.DBPrivileges["db1"] = StringSet{"SELECT": {}}
-	snapshot.DBPrivileges["db2"] = StringSet{"UPDATE": {}}
-	snapshot.TablePrivileges[TableScope{Schema: "db1", Table: "orders"}] = StringSet{"SELECT": {}}
-	findings := runRules("root@127.0.0.1:3306", []PrivilegeSnapshot{*snapshot}, "all")
-	if len(findings) != 3 {
-		t.Fatalf("expected 3 findings, got %#v", findings)
+func TestRunRulesAggregatesPrivilegeFindingsByUser(t *testing.T) {
+	first := newPrivilegeSnapshot(UserHost{User: "app", Host: "%"})
+	first.DBPrivileges["db1"] = StringSet{"SELECT": {}}
+	first.TablePrivileges[TableScope{Schema: "db1", Table: "orders"}] = StringSet{"SELECT": {}}
+	second := newPrivilegeSnapshot(UserHost{User: "app", Host: "10.%"})
+	second.DBPrivileges["db2"] = StringSet{"UPDATE": {}}
+	findings := runRules("root@127.0.0.1:3306", []PrivilegeSnapshot{*first, *second}, "all")
+	if len(findings) != 4 {
+		t.Fatalf("expected 4 findings, got %#v", findings)
+	}
+	for _, finding := range findings {
+		if finding.User != "app" {
+			t.Fatalf("expected finding to be keyed by user, got %#v", finding)
+		}
+		if finding.Identity != "" {
+			t.Fatalf("expected no user@host identity on user-level finding, got %#v", finding)
+		}
+	}
+	summary := buildSummary([]PrivilegeSnapshot{*first, *second}, findings)
+	if summary.CheckedUsers != 1 || summary.CheckedIdentities != 2 {
+		t.Fatalf("unexpected checked counts: %#v", summary)
+	}
+	if summary.MultiSchemaUsers != 1 || summary.DBLevelPrivilegeUsers != 1 || summary.TableLevelPrivilegeUsers != 1 {
+		t.Fatalf("expected user-level summary counts, got %#v", summary)
+	}
+	if summary.InconsistentHostPrivilegeUsers != 1 {
+		t.Fatalf("expected host consistency summary count, got %#v", summary)
 	}
 }
 
@@ -110,16 +129,16 @@ func TestRenderReportTextIncludesSummary(t *testing.T) {
 			Summary: AuditSummary{
 				CheckedUsers:                   1,
 				CheckedIdentities:              1,
-				MultiSchemaIdentities:          1,
-				DBLevelPrivilegeIdentities:     1,
-				TableLevelPrivilegeIdentities:  1,
+				MultiSchemaUsers:               1,
+				DBLevelPrivilegeUsers:          1,
+				TableLevelPrivilegeUsers:       1,
 				InconsistentHostPrivilegeUsers: 0,
 			},
 			Findings: []Finding{{
 				Rule:     "multi_schema_privileges",
 				Severity: "medium",
-				Identity: "app@%",
-				Summary:  "app@% has privileges on multiple schemas",
+				User:     "app",
+				Summary:  "app has privileges on multiple schemas",
 				Details:  map[string]any{"schemas": []string{"db1", "db2"}},
 			}},
 		}},
@@ -130,5 +149,11 @@ func TestRenderReportTextIncludesSummary(t *testing.T) {
 	}
 	if !strings.Contains(output, "checked_users=1") {
 		t.Fatalf("expected summary in output: %s", output)
+	}
+	if !strings.Contains(output, "multi_schema_users=1") {
+		t.Fatalf("expected user-level summary in output: %s", output)
+	}
+	if strings.Contains(output, "identity=app@%") {
+		t.Fatalf("did not expect user@host identity in output: %s", output)
 	}
 }

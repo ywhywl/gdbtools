@@ -150,6 +150,9 @@ type AuditSummary struct {
 	CheckedUsers                   int `json:"checked_users"`
 	CheckedIdentities              int `json:"checked_identities"`
 	InconsistentHostPrivilegeUsers int `json:"inconsistent_host_privilege_users"`
+	MultiSchemaUsers               int `json:"multi_schema_users"`
+	DBLevelPrivilegeUsers          int `json:"db_level_privilege_users"`
+	TableLevelPrivilegeUsers       int `json:"table_level_privilege_users"`
 	MultiSchemaIdentities          int `json:"multi_schema_identities"`
 	DBLevelPrivilegeIdentities     int `json:"db_level_privilege_identities"`
 	TableLevelPrivilegeIdentities  int `json:"table_level_privilege_identities"`

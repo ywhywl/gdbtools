@@ -29,9 +29,9 @@ func renderInstanceReportText(report InstanceReport, detailLimit int) []string {
 		"    checked_users="+itoa(report.Summary.CheckedUsers),
 		"    checked_identities="+itoa(report.Summary.CheckedIdentities),
 		"    inconsistent_host_privilege_users="+itoa(report.Summary.InconsistentHostPrivilegeUsers),
-		"    multi_schema_identities="+itoa(report.Summary.MultiSchemaIdentities),
-		"    db_level_privilege_identities="+itoa(report.Summary.DBLevelPrivilegeIdentities),
-		"    table_level_privilege_identities="+itoa(report.Summary.TableLevelPrivilegeIdentities),
+		"    multi_schema_users="+itoa(report.Summary.MultiSchemaUsers),
+		"    db_level_privilege_users="+itoa(report.Summary.DBLevelPrivilegeUsers),
+		"    table_level_privilege_users="+itoa(report.Summary.TableLevelPrivilegeUsers),
 	)
 	if len(report.Findings) == 0 {
 		return append(lines, "  Findings: none")

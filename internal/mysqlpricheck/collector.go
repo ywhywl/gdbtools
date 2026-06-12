@@ -243,11 +243,11 @@ func buildSummary(snapshots []PrivilegeSnapshot, findings []Finding) AuditSummar
 		case "inconsistent_host_privileges":
 			summary.InconsistentHostPrivilegeUsers++
 		case "multi_schema_privileges":
-			summary.MultiSchemaIdentities++
+			summary.MultiSchemaUsers++
 		case "db_level_privileges":
-			summary.DBLevelPrivilegeIdentities++
+			summary.DBLevelPrivilegeUsers++
 		case "table_level_privileges":
-			summary.TableLevelPrivilegeIdentities++
+			summary.TableLevelPrivilegeUsers++
 		}
 		switch finding.Severity {
 		case "high":
@@ -258,6 +258,9 @@ func buildSummary(snapshots []PrivilegeSnapshot, findings []Finding) AuditSummar
 			summary.LowSeverityCount++
 		}
 	}
+	summary.MultiSchemaIdentities = summary.MultiSchemaUsers
+	summary.DBLevelPrivilegeIdentities = summary.DBLevelPrivilegeUsers
+	summary.TableLevelPrivilegeIdentities = summary.TableLevelPrivilegeUsers
 	return summary
 }
 

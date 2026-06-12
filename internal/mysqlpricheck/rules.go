@@ -73,8 +73,9 @@ func checkInconsistentHostPrivileges(instance string, snapshots []PrivilegeSnaps
 
 func checkMultiSchemaPrivileges(instance string, snapshots []PrivilegeSnapshot) []Finding {
 	findings := []Finding{}
-	for _, snapshot := range snapshots {
-		schemas := mapKeys(snapshot.DBPrivileges)
+	grouped := groupSnapshotsByUser(snapshots)
+	for user, items := range grouped {
+		schemas := schemasForSnapshots(items)
 		if len(schemas) <= 1 {
 			continue
 		}
@@ -82,12 +83,11 @@ func checkMultiSchemaPrivileges(instance string, snapshots []PrivilegeSnapshot) 
 			Rule:     "multi_schema_privileges",
 			Severity: "medium",
 			Instance: instance,
-			User:     snapshot.Identity.User,
-			Identity: snapshot.Identity.DisplayName(),
-			Summary:  snapshot.Identity.DisplayName() + " has privileges on multiple schemas",
+			User:     user,
+			Summary:  user + " has privileges on multiple schemas",
 			Details: map[string]any{
-				"schemas":       schemas,
-				"db_privileges": dbPrivilegesToMap(snapshot.DBPrivileges),
+				"schemas":   schemas,
+				"snapshots": identitySnapshotsByHost(items),
 			},
 		})
 	}
@@ -96,20 +96,21 @@ func checkMultiSchemaPrivileges(instance string, snapshots []PrivilegeSnapshot) 
 
 func checkDBLevelPrivileges(instance string, snapshots []PrivilegeSnapshot) []Finding {
 	findings := []Finding{}
-	for _, snapshot := range snapshots {
-		if len(snapshot.DBPrivileges) == 0 {
+	grouped := groupSnapshotsByUser(snapshots)
+	for user, items := range grouped {
+		schemas := schemasForSnapshots(items)
+		if len(schemas) == 0 {
 			continue
 		}
 		findings = append(findings, Finding{
 			Rule:     "db_level_privileges",
 			Severity: "medium",
 			Instance: instance,
-			User:     snapshot.Identity.User,
-			Identity: snapshot.Identity.DisplayName(),
-			Summary:  snapshot.Identity.DisplayName() + " has database-level privileges",
+			User:     user,
+			Summary:  user + " has database-level privileges",
 			Details: map[string]any{
-				"schemas":       mapKeys(snapshot.DBPrivileges),
-				"db_privileges": dbPrivilegesToMap(snapshot.DBPrivileges),
+				"schemas":   schemas,
+				"snapshots": identitySnapshotsByHost(items),
 			},
 		})
 	}
@@ -118,23 +119,63 @@ func checkDBLevelPrivileges(instance string, snapshots []PrivilegeSnapshot) []Fi
 
 func checkTableLevelPrivileges(instance string, snapshots []PrivilegeSnapshot) []Finding {
 	findings := []Finding{}
-	for _, snapshot := range snapshots {
-		if len(snapshot.TablePrivileges) == 0 {
+	grouped := groupSnapshotsByUser(snapshots)
+	for user, items := range grouped {
+		if !hasTablePrivileges(items) {
 			continue
 		}
 		findings = append(findings, Finding{
 			Rule:     "table_level_privileges",
 			Severity: "medium",
 			Instance: instance,
-			User:     snapshot.Identity.User,
-			Identity: snapshot.Identity.DisplayName(),
-			Summary:  snapshot.Identity.DisplayName() + " has table-level privileges",
+			User:     user,
+			Summary:  user + " has table-level privileges",
 			Details: map[string]any{
-				"table_privileges": tablePrivilegesToMap(snapshot.TablePrivileges),
+				"snapshots": identitySnapshotsByHost(items),
 			},
 		})
 	}
 	return findings
+}
+
+func groupSnapshotsByUser(snapshots []PrivilegeSnapshot) map[string][]PrivilegeSnapshot {
+	grouped := map[string][]PrivilegeSnapshot{}
+	for _, snapshot := range snapshots {
+		grouped[snapshot.Identity.User] = append(grouped[snapshot.Identity.User], snapshot)
+	}
+	return grouped
+}
+
+func schemasForSnapshots(snapshots []PrivilegeSnapshot) []string {
+	schemas := map[string]struct{}{}
+	for _, snapshot := range snapshots {
+		for schema := range snapshot.DBPrivileges {
+			schemas[schema] = struct{}{}
+		}
+	}
+	return sortedStringKeys(schemas)
+}
+
+func hasTablePrivileges(snapshots []PrivilegeSnapshot) bool {
+	for _, snapshot := range snapshots {
+		if len(snapshot.TablePrivileges) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func identitySnapshotsByHost(snapshots []PrivilegeSnapshot) []map[string]any {
+	items := make([]PrivilegeSnapshot, len(snapshots))
+	copy(items, snapshots)
+	sort.SliceStable(items, func(i, j int) bool {
+		return items[i].Identity.Host < items[j].Identity.Host
+	})
+	result := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		result = append(result, identitySnapshotByHost(item))
+	}
+	return result
 }
 
 func severityRank(value string) int {
@@ -148,7 +189,7 @@ func severityRank(value string) int {
 	}
 }
 
-func mapKeys[V any](items map[string]V) []string {
+func sortedStringKeys(items map[string]struct{}) []string {
 	keys := make([]string, 0, len(items))
 	for key := range items {
 		keys = append(keys, key)

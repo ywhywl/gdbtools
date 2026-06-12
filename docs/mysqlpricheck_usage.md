@@ -5,7 +5,7 @@
 `mysqlpricheck` 用于审计 MySQL 5.7 实例内部的用户权限，重点关注以下问题：
 
 - 同一个用户在不同 host 下权限不一致
-- 同一个 `user@host` 同时拥有多个 schema 的权限
+- 同一个用户在任意 host 下合并后同时拥有多个 schema 的权限
 - 存在库级权限
 - 存在表级权限
 
@@ -43,6 +43,8 @@ go run ./cmd/mysqlpricheck \
   --output-format text
 ```
 
+账号检查口径为 `user`。例如 `app@%` 和 `app@10.0.0.%` 会作为同一个 `app` 账号统计和输出；`user@host` 选择器仅用于限定采集哪些 host 明细。
+
 ## 只检查 host 权限不一致
 
 ```bash
@@ -71,9 +73,9 @@ go run ./cmd/mysqlpricheck \
 - `--connect-timeout`
   - 连接超时秒数
 - `--users`
-  - 仅检查指定用户或 `user@host`
+  - 仅检查指定用户，或用 `user@host` 限定指定 host 明细
 - `--exclude-users`
-  - 排除用户或 `user@host`
+  - 排除用户，或用 `user@host` 排除指定 host 明细
 - `--exclude-schemas`
   - 排除 schema
 - `--include-anonymous`
@@ -124,15 +126,17 @@ Instance: root@10.0.0.11:3306
     checked_users=12
     checked_identities=18
     inconsistent_host_privilege_users=2
-    multi_schema_identities=5
-    db_level_privilege_identities=8
-    table_level_privilege_identities=3
+    multi_schema_users=5
+    db_level_privilege_users=8
+    table_level_privilege_users=3
   Findings:
     [HIGH] inconsistent_host_privileges
       user=app
       summary=app has different privileges across hosts
       detail={"hosts":["%","10.0.0.%"],"snapshots":[...]}
 ```
+
+JSON 输出中暂时保留 `multi_schema_identities`、`db_level_privilege_identities`、`table_level_privilege_identities` 兼容旧消费方，但这些字段已经使用 user 口径，后续应迁移到对应的 `*_users` 字段。
 
 ## 权限要求
 

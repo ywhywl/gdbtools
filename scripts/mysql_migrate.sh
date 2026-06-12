@@ -662,7 +662,7 @@ build_structure_dump_command() {
   if [[ ${#auth[@]} -gt 0 ]]; then
     cmd+=("${auth[@]}")
   fi
-  cmd+=("--host=$SOURCE_HOST" "--port=$SOURCE_PORT" "$schema" "--no-data" "--skip-comments" "--skip-set-charset" "--skip-triggers")
+  cmd+=("--host=$SOURCE_HOST" "--port=$SOURCE_PORT" "$schema" "--no-data" "--set-gtid-purged=OFF")
   if [[ "$STRUCTURE_WITH_DROP" == "true" ]]; then
     cmd+=("--add-drop-table")
   else
@@ -682,7 +682,7 @@ build_data_dump_command() {
   if [[ ${#auth[@]} -gt 0 ]]; then
     cmd+=("${auth[@]}")
   fi
-  cmd+=("--host=$SOURCE_HOST" "--port=$SOURCE_PORT" "--skip-comments" "--skip-set-charset")
+  cmd+=("--host=$SOURCE_HOST" "--port=$SOURCE_PORT" "--set-gtid-purged=OFF")
 
   if [[ "$DUMP_DATA_WITH_DROP" == "true" ]]; then
     cmd+=("--add-drop-table")
@@ -738,6 +738,7 @@ export_schema_artifacts() {
 
   structure_dump_cmd="$(build_structure_dump_command "$schema" "$structure_path")"
   log "exporting structure for source schema $schema"
+  log "structure dump command: $structure_dump_cmd"
   run_local_or_remote "$SOURCE_RELAY" "$SOURCE_RELAY_USER" "$structure_dump_cmd"
   if [[ "$DRY_RUN" == "true" ]]; then
     capture_local_or_remote "$SOURCE_RELAY" "$SOURCE_RELAY_USER" "$(compress_if_needed_command "$structure_path")" >/dev/null
@@ -749,6 +750,7 @@ export_schema_artifacts() {
   if [[ "$WITH_DATA" == "true" ]]; then
     data_dump_cmd="$(build_data_dump_command "$schema" "$data_path")"
     log "exporting data for source schema $schema"
+    log "data dump command: $data_dump_cmd"
     run_local_or_remote "$SOURCE_RELAY" "$SOURCE_RELAY_USER" "$data_dump_cmd"
     if [[ "$DRY_RUN" == "true" ]]; then
       capture_local_or_remote "$SOURCE_RELAY" "$SOURCE_RELAY_USER" "$(compress_if_needed_command "$data_path")" >/dev/null
@@ -903,6 +905,7 @@ perform_migration() {
 
     log "importing structure into target $target_host:$target_port:$target_schema"
     import_cmd="$(import_sql_command "$target_host" "$target_port" "$target_schema" "$remote_structure_on_target")"
+    log "structure import command: $import_cmd"
     run_local_or_remote "$TARGET_RELAY" "$TARGET_RELAY_USER" "$import_cmd"
 
     if [[ "$WITH_DATA" == "true" && -n "$local_data" ]]; then
@@ -910,6 +913,7 @@ perform_migration() {
       stage_file_to_target_relay "$local_data" "$TARGET_RELAY" "$TARGET_RELAY_USER" "$remote_data_on_target"
       log "importing data into target $target_host:$target_port:$target_schema"
       import_cmd="$(import_sql_command "$target_host" "$target_port" "$target_schema" "$remote_data_on_target")"
+      log "data import command: $import_cmd"
       run_local_or_remote "$TARGET_RELAY" "$TARGET_RELAY_USER" "$import_cmd"
     fi
 
