@@ -1,12 +1,13 @@
 package dbauthlookup
 
 type Options struct {
-	BusinessName        string
+	BusinessNames       []string
 	BusinessClusterFile string
 	DBClusterFile       string
 	AccessRelationFile  string
 	AppIPFile           string
 	OutputFormat        string
+	OutputPath          string
 	WithDiagnostics     bool
 }
 
@@ -81,10 +82,11 @@ type Diagnostic struct {
 }
 
 type Report struct {
-	BusinessName string       `json:"business_name"`
-	Summary      Summary      `json:"summary"`
-	Rows         []ResultRow  `json:"rows"`
-	Diagnostics  []Diagnostic `json:"diagnostics,omitempty"`
+	BusinessNames []string       `json:"business_names,omitempty"`
+	Summary       Summary        `json:"summary"`
+	Console       ConsoleSummary `json:"console_summary"`
+	Rows          []ResultRow    `json:"rows"`
+	Diagnostics   []Diagnostic   `json:"diagnostics,omitempty"`
 }
 
 type Summary struct {
@@ -94,4 +96,28 @@ type Summary struct {
 	ApplicationCount    int `json:"application_count"`
 	AuthorizationCount  int `json:"authorization_count"`
 	DiagnosticCount     int `json:"diagnostic_count"`
+}
+
+type ConsoleSummary struct {
+	Total      ConsoleTotal         `json:"total"`
+	ByBusiness []BusinessIDCSummary `json:"by_business"`
+}
+
+type ConsoleTotal struct {
+	BusinessCount      int `json:"business_count"`
+	ClusterCount       int `json:"cluster_count"`
+	DatabaseCount      int `json:"database_count"`
+	AuthorizationCount int `json:"authorization_count"`
+	ApplicationCount   int `json:"application_count"`
+	IPCount            int `json:"ip_count"`
+}
+
+type BusinessIDCSummary struct {
+	BusinessName       string `json:"business_name"`
+	ApplicationCenter  string `json:"application_center"`
+	ClusterCount       int    `json:"cluster_count"`
+	DatabaseCount      int    `json:"database_count"`
+	AuthorizationCount int    `json:"authorization_count"`
+	ApplicationCount   int    `json:"application_count"`
+	IPCount            int    `json:"ip_count"`
 }

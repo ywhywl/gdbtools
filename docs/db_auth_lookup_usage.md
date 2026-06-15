@@ -2,7 +2,7 @@
 
 ## 目标
 
-`db-auth-lookup` 用于读取 4 份 Excel 台账，按业务名称查询该业务下全部数据库授权信息。
+`db-auth-lookup` 用于读取 4 份台账，按业务名称查询该业务下全部数据库授权信息。输入文件支持 `.xlsx`、`.xlsm` 和 `.csv`，按文件后缀自动识别。
 
 ## 构建
 
@@ -37,24 +37,102 @@ go run ./cmd/db-auth-lookup \
   --with-diagnostics
 ```
 
+输出格式切换为 CSV：
+
+```bash
+go run ./cmd/db-auth-lookup \
+  --business-cluster-file sample_excels/数据库集群映射表.xlsx \
+  --db-cluster-file sample_excels/数据库和集群映射表.xlsx \
+  --access-relation-file sample_excels/访问关系表.xlsx \
+  --app-ip-file sample_excels/应用和ip映射表.xlsx \
+  --output-format csv \
+  --with-diagnostics \
+  --output /tmp/db_auth_lookup.csv
+```
+
+使用 CSV 作为输入：
+
+```bash
+go run ./cmd/db-auth-lookup \
+  --business-cluster-file sample_excels/数据库集群映射表.csv \
+  --db-cluster-file sample_excels/数据库和集群映射表.csv \
+  --access-relation-file sample_excels/访问关系表.csv \
+  --app-ip-file sample_excels/应用和ip映射表.csv \
+  --output-format xlsx \
+  --with-diagnostics \
+  --output /tmp/db_auth_lookup.xlsx
+```
+
+输出格式切换为 Excel：
+
+```bash
+go run ./cmd/db-auth-lookup \
+  --business-cluster-file sample_excels/数据库集群映射表.xlsx \
+  --db-cluster-file sample_excels/数据库和集群映射表.xlsx \
+  --access-relation-file sample_excels/访问关系表.xlsx \
+  --app-ip-file sample_excels/应用和ip映射表.xlsx \
+  --output-format xlsx \
+  --with-diagnostics \
+  --output /tmp/db_auth_lookup.xlsx
+```
+
 ## 参数
 
 - `--business-name`
-  - 必填，业务名称
+  - 可选，业务名称
+  - 不传时匹配全部业务
+  - 可重复传入，也支持逗号分隔，例如 `--business-name gdb-trans,gdb-settle`
 - `--business-cluster-file`
   - 必填，数据库集群映射表路径
+  - 支持 `.xlsx`、`.xlsm`、`.csv`
 - `--db-cluster-file`
   - 必填，数据库和集群映射表路径
+  - 支持 `.xlsx`、`.xlsm`、`.csv`
 - `--access-relation-file`
   - 必填，访问关系表路径
+  - 支持 `.xlsx`、`.xlsm`、`.csv`
 - `--app-ip-file`
   - 必填，应用和ip映射表路径
+  - 支持 `.xlsx`、`.xlsm`、`.csv`
 - `--output-format`
-  - 可选，`text` 或 `json`
+  - 可选，`text`、`json`、`csv` 或 `xlsx`
+- `--output`
+  - 可选，输出文件路径
+  - 不传时输出到标准输出
+  - `--output-format csv` 或 `--output-format xlsx` 时必填
 - `--with-diagnostics`
   - 可选，输出未匹配和解析告警
+  - 使用 `--output` 写文件时，诊断信息仍输出到标准输出，不写入结果文件
 
 ## 输出
+
+命令标准输出默认打印统计信息。即使使用 `--output` 将明细写入文件，统计信息仍输出到终端。
+
+标准输出示例：
+
+```text
+Summary:
+Businesses: 1
+Clusters: 30
+Databases: 2
+Authorization rows: 6
+Applications: 1
+Application IPs: 3
+
+By business:
+- gdb-trans: clusters=30 databases=2 idc-13 applications=1 ips=3 authorization_rows=2
+- gdb-trans: clusters=30 databases=2 idc-12 applications=1 ips=3 authorization_rows=2
+- gdb-trans: clusters=30 databases=2 idc-23 applications=1 ips=3 authorization_rows=2
+```
+
+使用 `--with-diagnostics` 时，会在统计信息后追加诊断信息：
+
+```text
+Diagnostics:
+- missing_cluster_mapping [BJ13_clearing_branch_27]: cluster not found in 数据库和集群映射表: BJ13_clearing_branch_27
+- missing_cluster_mapping [BJ13_clearing_branch_28]: cluster not found in 数据库和集群映射表: BJ13_clearing_branch_28
+- missing_cluster_mapping [BJ13_clearing_branch_29]: cluster not found in 数据库和集群映射表: BJ13_clearing_branch_29
+```
 
 明细输出字段包括：
 
@@ -70,20 +148,27 @@ go run ./cmd/db-auth-lookup \
 - 访问权限
 - 状态
 
+统计口径：
+
+- 业务数量：最终命中的业务名称去重数量
+- 集群数量：业务过滤后命中的集群名去重数量
+- 数据库数量：成功匹配出的数据库名称去重数量
+- 授权明细数量：最终输出的授权明细行数
+- 应用数量：最终授权明细中的 `应用名称-CMDB` 去重数量
+- 应用服务器 IP 数量：最终授权明细关联到的 IP 去重数量
+- By business：按 `业务名称 + 应用所属中心` 拆行，统计每个业务在每个 IDC 下的应用数量、IP 数量和授权明细数量
+
 ## 当前实现说明
 
 当前版本已支持：
 
 - 从 `数据库集群映射表` 按业务名称筛选集群
+- 不传 `--business-name` 时查询全部业务
+- 多次传入 `--business-name` 或使用逗号分隔时查询多个业务
 - 从 `数据库和集群映射表` 找到数据库名称
 - 将 `访问关系表` 中的连续库表达式展开后匹配
 - 从 `应用和ip映射表` 关联 IP
-- 输出文本和 JSON 结果
+- 输出文本、JSON、CSV 和 Excel 结果
+- 输入支持 Excel 和 CSV
 
-当前版本对样例数据增加了一个兜底规则：
-
-- 若 `数据库集群映射表.集群名` 未出现在 `数据库和集群映射表`
-- 则尝试将如 `BJ13_clearing_branch_00` 这样的集群名裁剪为 `clearing_branch_00`
-- 再去匹配 `访问关系表`
-
-这个兜底是为了兼容当前样例截图中的字段关系，正式接真实台账时仍建议优先依赖完整的 `数据库和集群映射表`。
+当前版本严格依赖 `数据库和集群映射表` 中的 `集群名 -> 数据库名称` 映射关系。若 `数据库集群映射表` 中的集群名无法在该表中找到，会记录为 `missing_cluster_mapping`。

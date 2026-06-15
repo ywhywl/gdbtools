@@ -1,7 +1,10 @@
 package dbauthlookup
 
 import (
+	"encoding/csv"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/xuri/excelize/v2"
@@ -30,7 +33,7 @@ func loadDataset(options Options) (Dataset, error) {
 }
 
 func loadBusinessClusterRows(path string) ([]BusinessClusterRow, error) {
-	rows, err := readExcelRecords(path)
+	rows, err := readTabularRecords(path)
 	if err != nil {
 		return nil, err
 	}
@@ -56,7 +59,7 @@ func loadBusinessClusterRows(path string) ([]BusinessClusterRow, error) {
 }
 
 func loadDBClusterRows(path string) ([]DBClusterRow, error) {
-	rows, err := readExcelRecords(path)
+	rows, err := readTabularRecords(path)
 	if err != nil {
 		return nil, err
 	}
@@ -84,7 +87,7 @@ func loadDBClusterRows(path string) ([]DBClusterRow, error) {
 }
 
 func loadAccessRelationRows(path string) ([]AccessRelationRow, []Diagnostic, error) {
-	rows, err := readExcelRecords(path)
+	rows, err := readTabularRecords(path)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -124,7 +127,7 @@ func loadAccessRelationRows(path string) ([]AccessRelationRow, []Diagnostic, err
 }
 
 func loadAppIPRows(path string) ([]AppIPRow, error) {
-	rows, err := readExcelRecords(path)
+	rows, err := readTabularRecords(path)
 	if err != nil {
 		return nil, err
 	}
@@ -141,6 +144,17 @@ func loadAppIPRows(path string) ([]AppIPRow, error) {
 		result = append(result, item)
 	}
 	return result, nil
+}
+
+func readTabularRecords(path string) ([]map[string]string, error) {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".xlsx", ".xlsm":
+		return readExcelRecords(path)
+	case ".csv":
+		return readCSVRecords(path)
+	default:
+		return nil, fmt.Errorf("unsupported table file extension %q for %s, expected .xlsx, .xlsm, or .csv", filepath.Ext(path), path)
+	}
 }
 
 func readExcelRecords(path string) ([]map[string]string, error) {
@@ -160,6 +174,29 @@ func readExcelRecords(path string) ([]map[string]string, error) {
 	if len(rows) == 0 {
 		return nil, nil
 	}
+	return recordsFromRows(rows), nil
+}
+
+func readCSVRecords(path string) ([]map[string]string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("open %s: %w", path, err)
+	}
+	defer func() { _ = file.Close() }()
+	reader := csv.NewReader(file)
+	reader.FieldsPerRecord = -1
+	reader.TrimLeadingSpace = true
+	rows, err := reader.ReadAll()
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", path, err)
+	}
+	if len(rows) == 0 {
+		return nil, nil
+	}
+	return recordsFromRows(rows), nil
+}
+
+func recordsFromRows(rows [][]string) []map[string]string {
 	headers := make([]string, len(rows[0]))
 	for i, header := range rows[0] {
 		headers[i] = cleanText(header)
@@ -185,7 +222,7 @@ func readExcelRecords(path string) ([]map[string]string, error) {
 			records = append(records, record)
 		}
 	}
-	return records, nil
+	return records
 }
 
 func valueOf(row map[string]string, key string) string {

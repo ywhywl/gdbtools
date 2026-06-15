@@ -102,6 +102,7 @@ go run ./cmd/mysqlcompare \
 4. 如果源端 `db0` 映射到目标端 `db1`，则源端在 `db0` 上的授权只会与目标端在 `db1` 上的授权比较。
 5. 与 schema 对无关的其他目标端 schema 授权会被忽略，即使名称与源端 schema 相同。
 6. 如果无法形成任何 schema 对，则只比较全局权限，跳过库级和表级权限。
+7. 当源端和目标端没有可匹配的 schema 对时，文本输出会显示 `Structure diff: no common schema`，不会显示 `Structure diff: no differences`。
 
 映射示例：
 

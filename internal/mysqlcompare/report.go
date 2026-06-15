@@ -58,7 +58,9 @@ func renderTextTarget(comparison TargetComparison) []string {
 				lines = append(lines, "    - "+pair.SourceSchema+" -> "+pair.TargetSchema)
 			}
 		}
-		if len(comparison.SchemaDiffs) == 0 {
+		if len(comparison.SchemaPairs) == 0 {
+			lines = append(lines, "  Structure diff: no common schema")
+		} else if len(comparison.SchemaDiffs) == 0 {
 			lines = append(lines, "  Structure diff: no differences")
 		} else {
 			lines = append(lines, "  Structure diff:")
@@ -70,7 +72,11 @@ func renderTextTarget(comparison TargetComparison) []string {
 
 	if comparison.IncludePrivileges {
 		if !comparison.PrivilegeDiff.HasChanges() {
-			lines = append(lines, "  Privilege diff: no differences")
+			if len(comparison.SchemaPairs) == 0 {
+				lines = append(lines, "  Privilege diff: no global privilege differences; no common schema, schema-scoped privileges skipped")
+			} else {
+				lines = append(lines, "  Privilege diff: no differences")
+			}
 		} else {
 			lines = append(lines, "  Privilege diff:")
 			lines = append(lines, renderPrivilegeDiff(comparison.PrivilegeDiff)...)

@@ -2,7 +2,7 @@
 
 ## 目标
 
-`db-auth-lookup` 是一个用于离线分析 Excel 台账的授权查询工具。工具通过输入“数据库集群映射表”中的业务名称，串联 4 份表格中的映射关系，输出该业务下所有数据库授权信息。
+`db-auth-lookup` 是一个用于离线分析台账的授权查询工具。工具通过输入“数据库集群映射表”中的业务名称，串联 4 份表格中的映射关系，输出该业务下所有数据库授权信息。
 
 目标输出字段：
 
@@ -17,14 +17,14 @@
 
 ## 数据来源
 
-第一版依赖以下 4 份 Excel 表格：
+第一版依赖以下 4 份表格，输入支持 `.xlsx`、`.xlsm` 和 `.csv`，按文件后缀自动识别：
 
 - `数据库集群映射表`
 - `数据库和集群映射表`
 - `访问关系表`
 - `应用和ip映射表`
 
-用户提供的是 Excel 文件，当前需求描述中附带的是对应截图。后续实现时应直接读取原始 Excel，而不是依赖图片。
+用户提供的是 Excel 或 CSV 文件，当前需求描述中附带的是对应截图。后续实现时应直接读取原始表格文件，而不是依赖图片。
 
 根据当前 4 张截图，已确认的关键列名如下。
 
@@ -96,7 +96,8 @@
 第一版包含：
 
 - 按业务名称查询
-- 支持 Excel 多 sheet 或单 sheet 输入
+- 支持 Excel 和 CSV 输入
+- Excel 读取第一个 sheet，CSV 第一行作为表头
 - 支持数据库名称规范化后匹配
 - 输出业务下全部命中的授权明细
 - 同时保留原始数据库名和归一化数据库名，便于排查
@@ -253,7 +254,7 @@
 
 ### 1. 输入加载
 
-读取 4 个 Excel 文件，提取目标列并映射到内部结构。
+读取 4 个表格文件，提取目标列并映射到内部结构。
 
 基于当前截图，第一版可以直接按真实列名读取：
 
@@ -417,7 +418,12 @@
 
 ## 输出口径
 
-建议第一版同时支持两种输出视图。
+建议输出拆成两层：
+
+- 标准输出：始终输出本次查询的统计摘要
+- 结果文件：按 `--output-format` 输出授权明细，例如 `text`、`json`、`csv`、`xlsx`
+
+这样在使用 `--output-format xlsx --output xx.xlsx` 或 `--output-format csv --output xx.csv` 时，结果文件保持为可交付的授权明细，终端仍能直接看到本次查询规模、应用服务器 IP 分布和诊断信息。
 
 ### 明细视图
 
@@ -437,6 +443,80 @@
 - IP
 - 访问用户
 - 访问权限
+
+### 标准输出统计视图
+
+统计视图默认输出，不依赖 `--with-diagnostics`。
+
+总体统计建议包含：
+
+- 业务数量
+- 集群数量
+- 数据库数量
+- 授权明细数量
+- 应用数量
+- 应用服务器 IP 数量
+
+按业务统计建议包含，并按 `应用所属中心` 拆行：
+
+- 业务名称
+- 集群数量
+- 数据库数量
+- 应用所属中心，显示为 `idc-<应用所属中心>`
+- 授权明细数量
+- 应用数量
+- 应用服务器 IP 数量
+
+示例：
+
+```text
+Summary:
+Businesses: 1
+Clusters: 30
+Databases: 2
+Authorization rows: 6
+Applications: 1
+Application IPs: 3
+
+By business:
+- gdb-trans: clusters=30 databases=2 idc-13 applications=1 ips=3 authorization_rows=2
+- gdb-trans: clusters=30 databases=2 idc-12 applications=1 ips=3 authorization_rows=2
+- gdb-trans: clusters=30 databases=2 idc-23 applications=1 ips=3 authorization_rows=2
+```
+
+统计口径：
+
+- `Businesses`
+  - 最终命中的业务名称去重数量
+- `Clusters`
+  - `数据库集群映射表` 中命中的集群名去重数量
+- `Databases`
+  - 通过 `数据库和集群映射表` 成功匹配出的数据库名称去重数量
+- `Authorization rows`
+  - 最终输出的授权明细行数
+- `Applications`
+  - 最终授权明细中的 `应用名称-CMDB` 去重数量
+- `Application IPs`
+  - 最终授权明细关联到的 IP 去重数量
+- `By business`
+  - 先按业务名称分组，再按 `访问关系表.应用所属中心` 拆分为多行
+  - 每行显示该业务在该 `应用所属中心` 下的应用数量、IP 数量、授权明细行数
+  - `clusters` 和 `databases` 表示该业务整体涉及的集群数量和数据库数量，不按 IDC 缩减
+
+### 诊断视图
+
+诊断视图只在传入 `--with-diagnostics` 时输出，并追加在标准输出统计之后。
+
+诊断信息不写入 Excel 结果文件，避免和授权明细混在一起。
+
+示例：
+
+```text
+Diagnostics:
+- missing_cluster_mapping [BJ13_clearing_branch_27]: cluster not found in 数据库和集群映射表: BJ13_clearing_branch_27
+- missing_cluster_mapping [BJ13_clearing_branch_28]: cluster not found in 数据库和集群映射表: BJ13_clearing_branch_28
+- missing_cluster_mapping [BJ13_clearing_branch_29]: cluster not found in 数据库和集群映射表: BJ13_clearing_branch_29
+```
 
 ### 汇总视图
 
@@ -500,32 +580,89 @@ docs/
 - `run.go`
   - 参数解析、执行流程、退出码
 - `excel.go`
-  - 4 份 Excel 的读取和列映射
+  - 按文件后缀分派 Excel/CSV 读取，并处理 4 份表的列映射
 - `normalize.go`
   - 数据库名称清洗、区间解析、展开
 - `matcher.go`
   - 业务过滤和多表关联
 - `report.go`
-  - 文本、CSV、JSON 输出
+  - 标准输出统计、诊断信息、文本、CSV、JSON 输出
+- `xlsx.go`
+  - Excel 明细文件输出
 - `types.go`
   - 中间模型和输出模型
+
+### 统计实现建议
+
+建议在多表关联完成后统一计算统计，不在 Excel 读取阶段累计。
+
+推荐新增统计模型：
+
+```text
+ConsoleSummary
+  Total
+  ByBusiness[]
+  ByBusinessIDC[]
+
+ConsoleTotal
+  business_count
+  cluster_count
+  database_count
+  authorization_count
+  application_count
+  ip_count
+
+BusinessIDCSummary
+  business_name
+  application_center
+  cluster_count
+  database_count
+  authorization_count
+  application_count
+  ip_count
+```
+
+统计来源：
+
+- 总体和按业务统计基于最终 `ResultRow`
+- 集群数量也应参考业务过滤后的 `BusinessClusterRow`
+- `By business` 统计需要按 `ResultRow.BusinessName + ResultRow.ApplicationCenter` 分组
+- IP 数量基于 `ResultRow.IPs` 去重
+
+输出规则：
+
+- 使用 `--output` 写结果文件时，标准输出打印统计信息
+- `csv` 和 `xlsx` 输出必须指定 `--output`，避免标准输出同时混合机器可读明细和统计文本
+- `--with-diagnostics` 时，在统计信息后追加诊断信息
+- `xlsx` 文件只写授权明细，不写统计和诊断
+- `csv` 文件只写授权明细，不写统计和诊断
+- `json` 可继续输出完整结构化结果，但标准输出统计仍应保持可读文本
 
 ## 建议参数设计
 
 如果后续做 CLI，建议支持：
 
 - `--business-name`
-  - 必填，目标业务名称
+  - 可选，目标业务名称
+  - 不传时匹配全部业务
+  - 支持重复传入或逗号分隔以查询多个业务
 - `--business-cluster-file`
   - `数据库集群映射表` 路径
+  - 支持 `.xlsx`、`.xlsm`、`.csv`
 - `--db-cluster-file`
   - `数据库和集群映射表` 路径
+  - 支持 `.xlsx`、`.xlsm`、`.csv`
 - `--access-relation-file`
   - `访问关系表` 路径
+  - 支持 `.xlsx`、`.xlsm`、`.csv`
 - `--app-ip-file`
   - `应用和ip映射表` 路径
+  - 支持 `.xlsx`、`.xlsm`、`.csv`
 - `--output-format`
-  - `text` / `json` / `csv`
+  - `text` / `json` / `csv` / `xlsx`
+- `--output`
+  - 输出文件路径
+  - `csv` 和 `xlsx` 格式必填
 - `--with-diagnostics`
   - 是否输出未匹配与告警信息
 
@@ -544,6 +681,8 @@ docs/
 - 一个应用对应多个 IP
 - 数据库命中集群但未命中访问关系
 - 访问关系命中但应用未命中 IP 映射
+- CSV 输入与 Excel 输入解析结果一致
+- CSV 表头带 UTF-8 BOM 时仍能匹配真实列名
 
 ## 待确认项
 

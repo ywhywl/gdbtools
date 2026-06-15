@@ -426,7 +426,7 @@ Use these rules to avoid layout drift:
 | `insight-batch-add-cn` | Go CLI | Batch add CN nodes to existing GoldenDB clusters | [Usage](docs/insight_batch_add_cn.md), [Overview](docs/insight_tools_overview.md) |
 | `insight-batch-add-dn` | Go CLI | Batch add DN nodes to existing GoldenDB clusters | [Usage](docs/insight_batch_add_dn.md), [Overview](docs/insight_tools_overview.md) |
 | `insight-create-dbmgr` | Go CLI | Create and grant the dbmgr admin user through Insight | [Usage](docs/insight_create_dbmgr.md), [Overview](docs/insight_tools_overview.md) |
-| `db-auth-lookup` | Go CLI | Query database authorization details for a business from four Excel mapping files | [Design](docs/db_auth_lookup_design.md), [Usage](docs/db_auth_lookup_usage.md) |
+| `db-auth-lookup` | Go CLI | Query database authorization details for a business from four Excel/CSV mapping files | [Design](docs/db_auth_lookup_design.md), [Usage](docs/db_auth_lookup_usage.md) |
 | `mysqlcompare` | Go CLI | Compare MySQL source/target schema structure and privileges | [Usage](docs/mysqlcompare_usage.md) |
 | `mysqlpricheck` | Go CLI | Audit MySQL 5.7 privileges inside a single instance | [Design](docs/mysqlpricheck_design.md), [Usage](docs/mysqlpricheck_usage.md) |
 

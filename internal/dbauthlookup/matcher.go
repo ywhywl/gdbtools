@@ -3,7 +3,7 @@ package dbauthlookup
 import "sort"
 
 func buildReport(dataset Dataset, options Options) Report {
-	businessRows := filterBusinessRows(dataset.BusinessClusters, options.BusinessName)
+	businessRows := filterBusinessRows(dataset.BusinessClusters, options.BusinessNames)
 	dbByCluster := indexDBByCluster(dataset.DBClusters)
 	accessByDB := indexAccessByDB(dataset.AccessRelations)
 	ipByAppCenter, ipByApp := indexAppIPs(dataset.AppIPs)
@@ -14,10 +14,10 @@ func buildReport(dataset Dataset, options Options) Report {
 	clusterSet := map[string]bool{}
 	appSet := map[string]bool{}
 
-	if len(businessRows) == 0 {
+	if len(businessRows) == 0 && len(options.BusinessNames) > 0 {
 		diagnostics = append(diagnostics, Diagnostic{
 			Type:    "missing_business",
-			Message: "no rows matched business name: " + options.BusinessName,
+			Message: "no rows matched requested business names",
 		})
 	}
 
@@ -25,27 +25,12 @@ func buildReport(dataset Dataset, options Options) Report {
 		clusterSet[business.ClusterName] = true
 		dbRows := dbByCluster[business.ClusterName]
 		if len(dbRows) == 0 {
-			fallbackDB := trimPrefixClusterDBName(business.ClusterName)
-			if fallbackDB != "" {
-				dbRows = []DBClusterRow{{
-					ClusterName: business.ClusterName,
-					DBNameRaw:   fallbackDB,
-					DBName:      fallbackDB,
-					DBType:      business.DBType,
-				}}
-				diagnostics = append(diagnostics, Diagnostic{
-					Type:    "fallback_cluster_database",
-					Message: "cluster did not match 数据库和集群映射表, fallback database name from cluster: " + business.ClusterName,
-					Source:  business.ClusterName,
-				})
-			} else {
-				diagnostics = append(diagnostics, Diagnostic{
-					Type:    "missing_cluster_mapping",
-					Message: "cluster not found in 数据库和集群映射表: " + business.ClusterName,
-					Source:  business.ClusterName,
-				})
-				continue
-			}
+			diagnostics = append(diagnostics, Diagnostic{
+				Type:    "missing_cluster_mapping",
+				Message: "cluster not found in 数据库和集群映射表: " + business.ClusterName,
+				Source:  business.ClusterName,
+			})
+			continue
 		}
 		for _, db := range dbRows {
 			databaseSet[db.DBName] = true
@@ -95,7 +80,7 @@ func buildReport(dataset Dataset, options Options) Report {
 	}
 	sortResultRows(rows)
 	report := Report{
-		BusinessName: options.BusinessName,
+		BusinessNames: append([]string{}, options.BusinessNames...),
 		Summary: Summary{
 			BusinessClusterRows: len(businessRows),
 			DatabaseCount:       len(databaseSet),
@@ -106,17 +91,121 @@ func buildReport(dataset Dataset, options Options) Report {
 		},
 		Rows: rows,
 	}
+	report.Console = buildConsoleSummary(businessRows, rows)
 	if options.WithDiagnostics {
 		report.Diagnostics = diagnostics
 	}
 	return report
 }
 
-func filterBusinessRows(rows []BusinessClusterRow, businessName string) []BusinessClusterRow {
-	target := cleanText(businessName)
+func buildConsoleSummary(businessRows []BusinessClusterRow, rows []ResultRow) ConsoleSummary {
+	businesses := map[string]bool{}
+	clusters := map[string]bool{}
+	databases := map[string]bool{}
+	applications := map[string]bool{}
+	ips := map[string]bool{}
+	businessClusters := map[string]map[string]bool{}
+	for _, business := range businessRows {
+		businesses[business.BusinessName] = true
+		clusters[business.ClusterName] = true
+		if businessClusters[business.BusinessName] == nil {
+			businessClusters[business.BusinessName] = map[string]bool{}
+		}
+		businessClusters[business.BusinessName][business.ClusterName] = true
+	}
+
+	type groupStats struct {
+		databases    map[string]bool
+		applications map[string]bool
+		ips          map[string]bool
+		authCount    int
+	}
+	groups := map[string]*groupStats{}
+	groupOrder := []string{}
+	for _, row := range rows {
+		businesses[row.BusinessName] = true
+		clusters[row.ClusterName] = true
+		databases[row.DBName] = true
+		applications[row.ApplicationName] = true
+		if businessClusters[row.BusinessName] == nil {
+			businessClusters[row.BusinessName] = map[string]bool{}
+		}
+		businessClusters[row.BusinessName][row.ClusterName] = true
+		for _, ip := range row.IPs {
+			ips[ip] = true
+		}
+		key := row.BusinessName + "\x00" + row.ApplicationCenter
+		if groups[key] == nil {
+			groups[key] = &groupStats{
+				databases:    map[string]bool{},
+				applications: map[string]bool{},
+				ips:          map[string]bool{},
+			}
+			groupOrder = append(groupOrder, key)
+		}
+		group := groups[key]
+		group.databases[row.DBName] = true
+		group.applications[row.ApplicationName] = true
+		for _, ip := range row.IPs {
+			group.ips[ip] = true
+		}
+		group.authCount++
+	}
+	sort.Slice(groupOrder, func(i, j int) bool {
+		leftBusiness, leftCenter := splitGroupKey(groupOrder[i])
+		rightBusiness, rightCenter := splitGroupKey(groupOrder[j])
+		if leftBusiness != rightBusiness {
+			return leftBusiness < rightBusiness
+		}
+		return leftCenter < rightCenter
+	})
+	byBusiness := make([]BusinessIDCSummary, 0, len(groupOrder))
+	for _, key := range groupOrder {
+		businessName, applicationCenter := splitGroupKey(key)
+		group := groups[key]
+		byBusiness = append(byBusiness, BusinessIDCSummary{
+			BusinessName:       businessName,
+			ApplicationCenter:  applicationCenter,
+			ClusterCount:       len(businessClusters[businessName]),
+			DatabaseCount:      len(group.databases),
+			AuthorizationCount: group.authCount,
+			ApplicationCount:   len(group.applications),
+			IPCount:            len(group.ips),
+		})
+	}
+	return ConsoleSummary{
+		Total: ConsoleTotal{
+			BusinessCount:      len(businesses),
+			ClusterCount:       len(clusters),
+			DatabaseCount:      len(databases),
+			AuthorizationCount: len(rows),
+			ApplicationCount:   len(applications),
+			IPCount:            len(ips),
+		},
+		ByBusiness: byBusiness,
+	}
+}
+
+func splitGroupKey(key string) (string, string) {
+	for i, r := range key {
+		if r == '\x00' {
+			return key[:i], key[i+1:]
+		}
+	}
+	return key, ""
+}
+
+func filterBusinessRows(rows []BusinessClusterRow, businessNames []string) []BusinessClusterRow {
+	if len(businessNames) == 0 {
+		return append([]BusinessClusterRow{}, rows...)
+	}
+	targets := map[string]bool{}
+	for _, businessName := range businessNames {
+		targets[cleanText(businessName)] = true
+	}
 	result := []BusinessClusterRow{}
 	for _, row := range rows {
-		if cleanText(row.BusinessName) == target {
+		if targets[cleanText(row.BusinessName)] {
 			result = append(result, row)
 		}
 	}

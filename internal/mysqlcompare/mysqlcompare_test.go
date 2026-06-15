@@ -488,8 +488,32 @@ func TestRenderTextTargetHonorsCheckMode(t *testing.T) {
 	if strings.Contains(rendered, "Structure diff") {
 		t.Fatalf("structure block should be hidden: %s", rendered)
 	}
-	if !strings.Contains(rendered, "Privilege diff: no differences") {
+	if !strings.Contains(rendered, "Privilege diff: no global privilege differences") {
 		t.Fatalf("privilege block should be shown: %s", rendered)
+	}
+}
+
+func TestRenderTextTargetShowsNoCommonSchema(t *testing.T) {
+	lines := renderTextTarget(TargetComparison{
+		Target:            "target_a",
+		TargetConfig:      ConnectionConfig{Host: "127.0.0.1", Port: 3306},
+		SchemaPairs:       nil,
+		PrivilegeDiff:     PrivilegeDiff{},
+		IncludeStructure:  true,
+		IncludePrivileges: true,
+	})
+	rendered := strings.Join(lines, "\n")
+	if !strings.Contains(rendered, "Schema pairs: none") {
+		t.Fatalf("schema pair status should be shown: %s", rendered)
+	}
+	if !strings.Contains(rendered, "Structure diff: no common schema") {
+		t.Fatalf("no common schema should be shown: %s", rendered)
+	}
+	if strings.Contains(rendered, "Structure diff: no differences") {
+		t.Fatalf("structure no differences should not be shown without schema pairs: %s", rendered)
+	}
+	if !strings.Contains(rendered, "no common schema, schema-scoped privileges skipped") {
+		t.Fatalf("privilege scope should mention skipped schema privileges: %s", rendered)
 	}
 }
 

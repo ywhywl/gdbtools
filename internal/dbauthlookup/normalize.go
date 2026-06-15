@@ -14,6 +14,7 @@ var (
 
 func cleanText(value string) string {
 	value = strings.TrimSpace(value)
+	value = strings.TrimPrefix(value, "\ufeff")
 	value = strings.ReplaceAll(value, "\u00a0", " ")
 	value = strings.ReplaceAll(value, "，", ",")
 	value = strings.Join(strings.Fields(value), "")
@@ -29,6 +30,9 @@ func expandDBNames(raw string) ([]string, error) {
 	if value == "" {
 		return nil, nil
 	}
+	if matches := shortRangePattern.FindStringSubmatch(value); matches != nil {
+		return expandNumberRange(matches[1], matches[2], matches[3], raw)
+	}
 	if matches := fullRangePattern.FindStringSubmatch(value); matches != nil {
 		startPrefix, startNum := matches[1], matches[2]
 		endPrefix, endNum := matches[3], matches[4]
@@ -36,9 +40,6 @@ func expandDBNames(raw string) ([]string, error) {
 			return nil, fmt.Errorf("database range prefix mismatch: %s", raw)
 		}
 		return expandNumberRange(startPrefix, startNum, endNum, raw)
-	}
-	if matches := shortRangePattern.FindStringSubmatch(value); matches != nil {
-		return expandNumberRange(matches[1], matches[2], matches[3], raw)
 	}
 	return []string{value}, nil
 }
