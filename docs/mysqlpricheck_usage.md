@@ -6,7 +6,7 @@
 
 - 同一个用户在不同 host 下权限不一致
 - 同一个用户在任意 host 下合并后同时拥有多个 schema 的权限
-- 不同用户拥有的库级权限 schema 集合不一致
+- 不同用户拥有的库级权限涉及多个 database
 - 存在表级权限
 
 ## 构建
@@ -47,7 +47,7 @@ go run ./cmd/mysqlpricheck \
 
 `host_consistency` 只比较权限内容，不把 host 字符串本身作为差异。也就是说，`user1@host1` 和 `user1@host2` 如果拥有相同的 database/table/global 权限，不会被判定为权限不一致。
 
-`db_level` 检查不同 `user` 的库级权限 schema 集合是否不一致。单个用户拥有库级权限不会单独报错；多个 `user@host` 属于同一个 `user` 时会先按 `user` 合并；只有不同用户分别拥有不同 database 的权限时才会输出 `db_level_privileges`。
+`db_level` 检查库级权限是否同时涉及多个不同 `user` 和多个不同 database。单个用户拥有库级权限不会单独报错；多个 `user@host` 属于同一个 `user` 时会先按 `user` 合并；不同用户只拥有同一个 database 的库级权限也不会报错。
 
 ## 只检查 host 权限不一致
 

@@ -137,17 +137,33 @@ func TestRunRulesFindsDBLevelPrivilegesAcrossDifferentUsers(t *testing.T) {
 		if finding.Details["user_schemas"] == nil {
 			t.Fatalf("expected user_schemas detail, got %#v", finding)
 		}
+		if finding.Details["all_schemas"] == nil {
+			t.Fatalf("expected all_schemas detail, got %#v", finding)
+		}
 	}
 }
 
-func TestRunRulesIgnoresSameDBLevelPrivilegesAcrossDifferentUsers(t *testing.T) {
+func TestRunRulesFindsDBLevelPrivilegesForSameMultiDatabaseSet(t *testing.T) {
+	app := newPrivilegeSnapshot(UserHost{User: "app", Host: "%"})
+	app.DBPrivileges["db1"] = StringSet{"SELECT": {}}
+	app.DBPrivileges["db2"] = StringSet{"SELECT": {}}
+	report := newPrivilegeSnapshot(UserHost{User: "report", Host: "%"})
+	report.DBPrivileges["db1"] = StringSet{"SELECT": {}}
+	report.DBPrivileges["db2"] = StringSet{"SELECT": {}}
+	findings := runRules("root@127.0.0.1:3306", []PrivilegeSnapshot{*app, *report}, "db_level")
+	if len(findings) != 2 {
+		t.Fatalf("expected findings when different users have database-level privileges on multiple databases, got %#v", findings)
+	}
+}
+
+func TestRunRulesIgnoresSingleDatabaseAcrossDifferentUsers(t *testing.T) {
 	app := newPrivilegeSnapshot(UserHost{User: "app", Host: "%"})
 	app.DBPrivileges["db1"] = StringSet{"SELECT": {}}
 	report := newPrivilegeSnapshot(UserHost{User: "report", Host: "%"})
 	report.DBPrivileges["db1"] = StringSet{"SELECT": {}}
 	findings := runRules("root@127.0.0.1:3306", []PrivilegeSnapshot{*app, *report}, "db_level")
 	if len(findings) != 0 {
-		t.Fatalf("expected no finding when different users have the same database-level scope, got %#v", findings)
+		t.Fatalf("expected no finding when different users only have database-level privileges on one database, got %#v", findings)
 	}
 }
 

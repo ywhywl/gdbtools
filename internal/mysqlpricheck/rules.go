@@ -1,9 +1,6 @@
 package mysqlpricheck
 
-import (
-	"fmt"
-	"sort"
-)
+import "sort"
 
 func runRules(instance string, snapshots []PrivilegeSnapshot, checkMode string) []Finding {
 	findings := []Finding{}
@@ -105,20 +102,22 @@ func checkDBLevelPrivileges(instance string, snapshots []PrivilegeSnapshot) []Fi
 		}
 		userSchemas[user] = schemas
 	}
-	if len(userSchemas) <= 1 || sameSchemaSetForAllUsers(userSchemas) {
+	schemas := schemasForUserSchemas(userSchemas)
+	if len(userSchemas) <= 1 || len(schemas) <= 1 {
 		return nil
 	}
 
 	findings := make([]Finding, 0, len(userSchemas))
-	for user, schemas := range userSchemas {
+	for user, userOwnedSchemas := range userSchemas {
 		findings = append(findings, Finding{
 			Rule:     "db_level_privileges",
 			Severity: "medium",
 			Instance: instance,
 			User:     user,
-			Summary:  user + " has database-level privileges that differ from other users",
+			Summary:  user + " has database-level privileges in a multi-user multi-database grant set",
 			Details: map[string]any{
-				"schemas":      schemas,
+				"schemas":      userOwnedSchemas,
+				"all_schemas":  schemas,
 				"user_schemas": userSchemas,
 				"snapshots":    identitySnapshotsByHost(grouped[user]),
 			},
@@ -166,6 +165,16 @@ func schemasForSnapshots(snapshots []PrivilegeSnapshot) []string {
 	return sortedStringKeys(schemas)
 }
 
+func schemasForUserSchemas(userSchemas map[string][]string) []string {
+	schemas := map[string]struct{}{}
+	for _, items := range userSchemas {
+		for _, schema := range items {
+			schemas[schema] = struct{}{}
+		}
+	}
+	return sortedStringKeys(schemas)
+}
+
 func hasTablePrivileges(snapshots []PrivilegeSnapshot) bool {
 	for _, snapshot := range snapshots {
 		if len(snapshot.TablePrivileges) > 0 {
@@ -173,21 +182,6 @@ func hasTablePrivileges(snapshots []PrivilegeSnapshot) bool {
 		}
 	}
 	return false
-}
-
-func sameSchemaSetForAllUsers(userSchemas map[string][]string) bool {
-	var first string
-	for _, schemas := range userSchemas {
-		signature := fmt.Sprint(schemas)
-		if first == "" {
-			first = signature
-			continue
-		}
-		if signature != first {
-			return false
-		}
-	}
-	return true
 }
 
 func identitySnapshotsByHost(snapshots []PrivilegeSnapshot) []map[string]any {
