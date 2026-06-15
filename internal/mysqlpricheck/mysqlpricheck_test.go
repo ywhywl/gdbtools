@@ -80,6 +80,17 @@ func TestRunRulesFindsInconsistentHosts(t *testing.T) {
 	}
 }
 
+func TestRunRulesAllowsSamePrivilegesAcrossHosts(t *testing.T) {
+	first := newPrivilegeSnapshot(UserHost{User: "app", Host: "%"})
+	first.DBPrivileges["db1"] = StringSet{"SELECT": {}}
+	second := newPrivilegeSnapshot(UserHost{User: "app", Host: "10.0.0.1"})
+	second.DBPrivileges["db1"] = StringSet{"SELECT": {}}
+	findings := runRules("root@127.0.0.1:3306", []PrivilegeSnapshot{*first, *second}, "host_consistency")
+	if len(findings) != 0 {
+		t.Fatalf("expected no findings for identical privileges across hosts, got %#v", findings)
+	}
+}
+
 func TestRunRulesAggregatesPrivilegeFindingsByUser(t *testing.T) {
 	first := newPrivilegeSnapshot(UserHost{User: "app", Host: "%"})
 	first.DBPrivileges["db1"] = StringSet{"SELECT": {}}
@@ -87,8 +98,8 @@ func TestRunRulesAggregatesPrivilegeFindingsByUser(t *testing.T) {
 	second := newPrivilegeSnapshot(UserHost{User: "app", Host: "10.%"})
 	second.DBPrivileges["db2"] = StringSet{"UPDATE": {}}
 	findings := runRules("root@127.0.0.1:3306", []PrivilegeSnapshot{*first, *second}, "all")
-	if len(findings) != 4 {
-		t.Fatalf("expected 4 findings, got %#v", findings)
+	if len(findings) != 3 {
+		t.Fatalf("expected 3 findings, got %#v", findings)
 	}
 	for _, finding := range findings {
 		if finding.User != "app" {
@@ -102,11 +113,41 @@ func TestRunRulesAggregatesPrivilegeFindingsByUser(t *testing.T) {
 	if summary.CheckedUsers != 1 || summary.CheckedIdentities != 2 {
 		t.Fatalf("unexpected checked counts: %#v", summary)
 	}
-	if summary.MultiSchemaUsers != 1 || summary.DBLevelPrivilegeUsers != 1 || summary.TableLevelPrivilegeUsers != 1 {
+	if summary.MultiSchemaUsers != 1 || summary.DBLevelPrivilegeUsers != 0 || summary.TableLevelPrivilegeUsers != 1 {
 		t.Fatalf("expected user-level summary counts, got %#v", summary)
 	}
 	if summary.InconsistentHostPrivilegeUsers != 1 {
 		t.Fatalf("expected host consistency summary count, got %#v", summary)
+	}
+}
+
+func TestRunRulesFindsDBLevelPrivilegesAcrossDifferentUsers(t *testing.T) {
+	app := newPrivilegeSnapshot(UserHost{User: "app", Host: "%"})
+	app.DBPrivileges["db1"] = StringSet{"SELECT": {}}
+	report := newPrivilegeSnapshot(UserHost{User: "report", Host: "%"})
+	report.DBPrivileges["db2"] = StringSet{"SELECT": {}}
+	findings := runRules("root@127.0.0.1:3306", []PrivilegeSnapshot{*app, *report}, "db_level")
+	if len(findings) != 2 {
+		t.Fatalf("expected one finding per user with different database-level scopes, got %#v", findings)
+	}
+	for _, finding := range findings {
+		if finding.Rule != "db_level_privileges" {
+			t.Fatalf("unexpected finding: %#v", finding)
+		}
+		if finding.Details["user_schemas"] == nil {
+			t.Fatalf("expected user_schemas detail, got %#v", finding)
+		}
+	}
+}
+
+func TestRunRulesIgnoresSameDBLevelPrivilegesAcrossDifferentUsers(t *testing.T) {
+	app := newPrivilegeSnapshot(UserHost{User: "app", Host: "%"})
+	app.DBPrivileges["db1"] = StringSet{"SELECT": {}}
+	report := newPrivilegeSnapshot(UserHost{User: "report", Host: "%"})
+	report.DBPrivileges["db1"] = StringSet{"SELECT": {}}
+	findings := runRules("root@127.0.0.1:3306", []PrivilegeSnapshot{*app, *report}, "db_level")
+	if len(findings) != 0 {
+		t.Fatalf("expected no finding when different users have the same database-level scope, got %#v", findings)
 	}
 }
 

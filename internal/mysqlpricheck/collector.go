@@ -290,5 +290,9 @@ func tablePrivilegesToMap(values map[TableScope]StringSet) map[string][]string {
 }
 
 func snapshotSignature(snapshot PrivilegeSnapshot) string {
-	return fmt.Sprint(snapshot.ToMap())
+	return fmt.Sprint(map[string]any{
+		"global_privileges": snapshot.GlobalPrivileges.Sorted(),
+		"db_privileges":     dbPrivilegesToMap(snapshot.DBPrivileges),
+		"table_privileges":  tablePrivilegesToMap(snapshot.TablePrivileges),
+	})
 }

@@ -1,6 +1,7 @@
 package mysqlpricheck
 
 import (
+	"fmt"
 	"sort"
 )
 
@@ -95,22 +96,31 @@ func checkMultiSchemaPrivileges(instance string, snapshots []PrivilegeSnapshot) 
 }
 
 func checkDBLevelPrivileges(instance string, snapshots []PrivilegeSnapshot) []Finding {
-	findings := []Finding{}
 	grouped := groupSnapshotsByUser(snapshots)
+	userSchemas := map[string][]string{}
 	for user, items := range grouped {
 		schemas := schemasForSnapshots(items)
 		if len(schemas) == 0 {
 			continue
 		}
+		userSchemas[user] = schemas
+	}
+	if len(userSchemas) <= 1 || sameSchemaSetForAllUsers(userSchemas) {
+		return nil
+	}
+
+	findings := make([]Finding, 0, len(userSchemas))
+	for user, schemas := range userSchemas {
 		findings = append(findings, Finding{
 			Rule:     "db_level_privileges",
 			Severity: "medium",
 			Instance: instance,
 			User:     user,
-			Summary:  user + " has database-level privileges",
+			Summary:  user + " has database-level privileges that differ from other users",
 			Details: map[string]any{
-				"schemas":   schemas,
-				"snapshots": identitySnapshotsByHost(items),
+				"schemas":      schemas,
+				"user_schemas": userSchemas,
+				"snapshots":    identitySnapshotsByHost(grouped[user]),
 			},
 		})
 	}
@@ -163,6 +173,21 @@ func hasTablePrivileges(snapshots []PrivilegeSnapshot) bool {
 		}
 	}
 	return false
+}
+
+func sameSchemaSetForAllUsers(userSchemas map[string][]string) bool {
+	var first string
+	for _, schemas := range userSchemas {
+		signature := fmt.Sprint(schemas)
+		if first == "" {
+			first = signature
+			continue
+		}
+		if signature != first {
+			return false
+		}
+	}
+	return true
 }
 
 func identitySnapshotsByHost(snapshots []PrivilegeSnapshot) []map[string]any {
