@@ -8,6 +8,7 @@ type Options struct {
 	AppIPFile           string
 	OutputFormat        string
 	OutputPath          string
+	AggregateBy         string
 	WithDiagnostics     bool
 }
 
@@ -83,6 +84,7 @@ type Diagnostic struct {
 
 type Report struct {
 	BusinessNames []string       `json:"business_names,omitempty"`
+	AggregateBy   string         `json:"aggregate_by"`
 	Summary       Summary        `json:"summary"`
 	Console       ConsoleSummary `json:"console_summary"`
 	Rows          []ResultRow    `json:"rows"`

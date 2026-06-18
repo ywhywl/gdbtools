@@ -79,19 +79,21 @@ func buildReport(dataset Dataset, options Options) Report {
 		}
 	}
 	sortResultRows(rows)
+	outputRows := aggregateRows(rows, options.AggregateBy)
 	report := Report{
 		BusinessNames: append([]string{}, options.BusinessNames...),
+		AggregateBy:   firstNonEmpty(options.AggregateBy, "detail"),
 		Summary: Summary{
 			BusinessClusterRows: len(businessRows),
 			DatabaseCount:       len(databaseSet),
 			ClusterCount:        len(clusterSet),
 			ApplicationCount:    len(appSet),
-			AuthorizationCount:  len(rows),
+			AuthorizationCount:  len(outputRows),
 			DiagnosticCount:     len(diagnostics),
 		},
-		Rows: rows,
+		Rows: outputRows,
 	}
-	report.Console = buildConsoleSummary(businessRows, rows)
+	report.Console = buildConsoleSummary(businessRows, outputRows)
 	if options.WithDiagnostics {
 		report.Diagnostics = diagnostics
 	}

@@ -166,6 +166,106 @@ func TestBuildReportMatchesAllBusinessesWhenOmitted(t *testing.T) {
 	}
 }
 
+func TestBuildReportMatchesNormalizedIDC(t *testing.T) {
+	dataset := Dataset{
+		BusinessClusters: []BusinessClusterRow{
+			{BusinessName: "gdb-trans", DBType: "goldendb", ClusterName: "cluster_a", PrimaryHost: "10.0.0.1"},
+		},
+		DBClusters: []DBClusterRow{
+			{ClusterName: "cluster_a", DBNameRaw: "db_a", DBName: "db_a", DBType: "NUDB"},
+		},
+		AccessRelations: []AccessRelationRow{
+			{ApplicationName: "app-a", ApplicationCenter: normalizeIDC("BJ13"), DBPrimaryCenter: normalizeIDC("bj13"), DBName: "db_a", DBUser: "user_a", Privilege: "select"},
+		},
+		AppIPs: []AppIPRow{
+			{ApplicationName: "app-a", ApplicationCenter: normalizeIDC("13"), IPs: []string{"172.0.10.1"}},
+		},
+	}
+	report := buildReport(dataset, Options{BusinessNames: []string{"gdb-trans"}})
+	if report.Summary.AuthorizationCount != 1 {
+		t.Fatalf("expected 1 row, got %d", report.Summary.AuthorizationCount)
+	}
+	if report.Rows[0].ApplicationCenter != "13" || report.Rows[0].DBPrimaryCenter != "13" {
+		t.Fatalf("expected normalized IDC values, got app=%q db=%q", report.Rows[0].ApplicationCenter, report.Rows[0].DBPrimaryCenter)
+	}
+	if !reflect.DeepEqual(report.Rows[0].IPs, []string{"172.0.10.1"}) {
+		t.Fatalf("unexpected IPs: %#v", report.Rows[0].IPs)
+	}
+}
+
+func TestBuildReportAggregatesByDatabase(t *testing.T) {
+	dataset := Dataset{
+		BusinessClusters: []BusinessClusterRow{
+			{BusinessName: "gdb-trans", DBType: "goldendb", ClusterName: "cluster_a", PrimaryHost: "10.0.0.1"},
+		},
+		DBClusters: []DBClusterRow{
+			{ClusterName: "cluster_a", DBNameRaw: "db_a", DBName: "db_a", DBType: "NUDB"},
+		},
+		AccessRelations: []AccessRelationRow{
+			{ApplicationName: "app-a", ApplicationCenter: "13", DBName: "db_a", DBPrimaryCenter: "13", DBRole: "主库", DBUser: "user_b", Privilege: "select", Remark: "remark_b"},
+			{ApplicationName: "app-a", ApplicationCenter: "12", DBName: "db_a", DBPrimaryCenter: "13", DBRole: "主库", DBUser: "user_a", Privilege: "select", Remark: "remark_a"},
+		},
+		AppIPs: []AppIPRow{
+			{ApplicationName: "app-a", ApplicationCenter: "13", IPs: []string{"172.0.10.2"}},
+			{ApplicationName: "app-a", ApplicationCenter: "12", IPs: []string{"172.0.10.1"}},
+		},
+	}
+	report := buildReport(dataset, Options{BusinessNames: []string{"gdb-trans"}, AggregateBy: "database"})
+	if report.AggregateBy != "database" {
+		t.Fatalf("unexpected aggregate_by: %s", report.AggregateBy)
+	}
+	if report.Summary.AuthorizationCount != 1 || len(report.Rows) != 1 {
+		t.Fatalf("expected 1 aggregated row, summary=%d rows=%d", report.Summary.AuthorizationCount, len(report.Rows))
+	}
+	row := report.Rows[0]
+	if row.ApplicationCenter != "12,13" {
+		t.Fatalf("unexpected application centers: %q", row.ApplicationCenter)
+	}
+	if row.DBUser != "user_a,user_b" {
+		t.Fatalf("unexpected db users: %q", row.DBUser)
+	}
+	if row.Remark != "remark_a,remark_b" {
+		t.Fatalf("unexpected remarks: %q", row.Remark)
+	}
+	if !reflect.DeepEqual(row.IPs, []string{"172.0.10.1", "172.0.10.2"}) {
+		t.Fatalf("unexpected IPs: %#v", row.IPs)
+	}
+}
+
+func TestBuildReportAggregatesByCluster(t *testing.T) {
+	dataset := Dataset{
+		BusinessClusters: []BusinessClusterRow{
+			{BusinessName: "gdb-trans", DBType: "goldendb", ClusterName: "cluster_a", PrimaryHost: "10.0.0.1"},
+		},
+		DBClusters: []DBClusterRow{
+			{ClusterName: "cluster_a", DBNameRaw: "db_a", DBName: "db_a", DBType: "NUDB"},
+			{ClusterName: "cluster_a", DBNameRaw: "db_b", DBName: "db_b", DBType: "NUDB"},
+		},
+		AccessRelations: []AccessRelationRow{
+			{ApplicationName: "app-b", ApplicationCenter: "13", DBName: "db_b", DBUser: "user_b", Privilege: "select"},
+			{ApplicationName: "app-a", ApplicationCenter: "13", DBName: "db_a", DBUser: "user_a", Privilege: "select"},
+		},
+		AppIPs: []AppIPRow{
+			{ApplicationName: "app-a", ApplicationCenter: "13", IPs: []string{"172.0.10.1"}},
+			{ApplicationName: "app-b", ApplicationCenter: "13", IPs: []string{"172.0.10.2"}},
+		},
+	}
+	report := buildReport(dataset, Options{BusinessNames: []string{"gdb-trans"}, AggregateBy: "cluster"})
+	if report.Summary.AuthorizationCount != 1 || len(report.Rows) != 1 {
+		t.Fatalf("expected 1 aggregated row, summary=%d rows=%d", report.Summary.AuthorizationCount, len(report.Rows))
+	}
+	row := report.Rows[0]
+	if row.DBName != "db_a,db_b" {
+		t.Fatalf("unexpected db names: %q", row.DBName)
+	}
+	if row.ApplicationName != "app-a,app-b" {
+		t.Fatalf("unexpected application names: %q", row.ApplicationName)
+	}
+	if row.DBUser != "user_a,user_b" {
+		t.Fatalf("unexpected db users: %q", row.DBUser)
+	}
+}
+
 func TestBuildConsoleSummaryByBusinessIDC(t *testing.T) {
 	report := buildReport(Dataset{
 		BusinessClusters: []BusinessClusterRow{
@@ -198,6 +298,49 @@ func TestBuildConsoleSummaryByBusinessIDC(t *testing.T) {
 	}
 	if !strings.Contains(output, "- gdb-trans: clusters=2 databases=2 idc-13 applications=1 ips=2 authorization_rows=2") {
 		t.Fatalf("summary missing idc-13 row: %s", output)
+	}
+}
+
+func TestLoadDatasetFromXLSXInputs(t *testing.T) {
+	dir := t.TempDir()
+	businessClusterPath := filepath.Join(dir, "数据库集群映射表.xlsx")
+	dbClusterPath := filepath.Join(dir, "数据库和集群映射表.xlsx")
+	accessRelationPath := filepath.Join(dir, "访问关系表.xlsx")
+	appIPPath := filepath.Join(dir, "应用和ip映射表.xlsx")
+	writeXLSXFixture(t, businessClusterPath, [][]string{
+		{"业务名称", "数据库类型", "集群名", "主库"},
+		{"gdb-trans", "goldendb", "BJ13_clearing_branch_00", "10.26.24.11"},
+	})
+	writeXLSXFixture(t, dbClusterPath, [][]string{
+		{"集群名", "数据库名称", "数据库类型"},
+		{"BJ13_clearing_branch_00", "clearing_branch_00", "NUDB"},
+	})
+	writeXLSXFixture(t, accessRelationPath, [][]string{
+		{"序号", "应用名称-CMDB", "应用所属中心", "数据库名称", "数据库主库所属中心", "目标节点数据库角色", "访问数据库使用用户", "访问权限"},
+		{"1", "clearing-worker", "BJ13", "clearing_branch_00", "bj13", "主库", "nclearingwork", "select,insert,update"},
+	})
+	writeXLSXFixture(t, appIPPath, [][]string{
+		{"应用名称-CMDB", "应用所属中心", "IP"},
+		{"clearing-worker", "13", "172.0.10.2,172.0.10.3"},
+	})
+	dataset, err := loadDataset(Options{
+		BusinessClusterFile: businessClusterPath,
+		DBClusterFile:       dbClusterPath,
+		AccessRelationFile:  accessRelationPath,
+		AppIPFile:           appIPPath,
+	})
+	if err != nil {
+		t.Fatalf("loadDataset returned error: %v", err)
+	}
+	report := buildReport(dataset, Options{BusinessNames: []string{"gdb-trans"}})
+	if report.Summary.AuthorizationCount != 1 {
+		t.Fatalf("expected 1 authorization row, got %d", report.Summary.AuthorizationCount)
+	}
+	if report.Rows[0].ApplicationCenter != "13" || report.Rows[0].DBPrimaryCenter != "13" {
+		t.Fatalf("expected normalized IDC values, got app=%q db=%q", report.Rows[0].ApplicationCenter, report.Rows[0].DBPrimaryCenter)
+	}
+	if !reflect.DeepEqual(report.Rows[0].IPs, []string{"172.0.10.2", "172.0.10.3"}) {
+		t.Fatalf("unexpected IPs: %#v", report.Rows[0].IPs)
 	}
 }
 
@@ -264,6 +407,19 @@ func TestParseArgsRequiresOutputForCSV(t *testing.T) {
 	}
 }
 
+func TestParseArgsRejectsInvalidAggregateBy(t *testing.T) {
+	_, err := parseArgs([]string{
+		"--business-cluster-file", "a.csv",
+		"--db-cluster-file", "b.csv",
+		"--access-relation-file", "c.csv",
+		"--app-ip-file", "d.csv",
+		"--aggregate-by", "application",
+	})
+	if err == nil || !strings.Contains(err.Error(), "invalid --aggregate-by") {
+		t.Fatalf("expected aggregate-by error, got %v", err)
+	}
+}
+
 func TestSplitBusinessNames(t *testing.T) {
 	got := splitBusinessNames([]string{"gdb-trans,gdb-settle", "gdb-trans"})
 	want := []string{"gdb-trans", "gdb-settle"}
@@ -290,6 +446,24 @@ func writeCSVRows(t *testing.T, path string, rows [][]string) {
 	}
 	if err := file.Close(); err != nil {
 		t.Fatalf("close csv fixture: %v", err)
+	}
+}
+
+func writeXLSXFixture(t *testing.T, path string, rows [][]string) {
+	t.Helper()
+	file := excelize.NewFile()
+	sheet := file.GetSheetName(file.GetActiveSheetIndex())
+	if sheet == "" {
+		sheet = "Sheet1"
+	}
+	if err := writeXLSXRows(file, sheet, rows); err != nil {
+		t.Fatalf("write xlsx fixture rows: %v", err)
+	}
+	if err := file.SaveAs(path); err != nil {
+		t.Fatalf("save xlsx fixture: %v", err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatalf("close xlsx fixture: %v", err)
 	}
 }
 

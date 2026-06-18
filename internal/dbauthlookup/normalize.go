@@ -10,6 +10,7 @@ import (
 var (
 	fullRangePattern  = regexp.MustCompile(`^(.+?)(\d+)\s*(?:至|-|~|－|—)\s*(.+?)(\d+)$`)
 	shortRangePattern = regexp.MustCompile(`^(.+?)(\d+)\s*(?:至|-|~|－|—)\s*(\d+)$`)
+	idcPattern        = regexp.MustCompile(`^(?:[A-Za-z]+)?(\d{2})$`)
 )
 
 func cleanText(value string) string {
@@ -23,6 +24,17 @@ func cleanText(value string) string {
 
 func normalizeDBName(value string) string {
 	return cleanText(value)
+}
+
+func normalizeIDC(value string) string {
+	value = cleanText(value)
+	if value == "" {
+		return ""
+	}
+	if matches := idcPattern.FindStringSubmatch(value); matches != nil {
+		return matches[1]
+	}
+	return value
 }
 
 func expandDBNames(raw string) ([]string, error) {
@@ -73,7 +85,7 @@ func trimPrefixClusterDBName(clusterName string) string {
 }
 
 func appKey(name, center string) string {
-	return cleanText(name) + "\x00" + cleanText(center)
+	return cleanText(name) + "\x00" + normalizeIDC(center)
 }
 
 func simpleAppKey(name string) string {

@@ -108,10 +108,10 @@ func loadAccessRelationRows(path string) ([]AccessRelationRow, []Diagnostic, err
 			item := AccessRelationRow{
 				Seq:               valueOf(row, "序号"),
 				ApplicationName:   valueOf(row, "应用名称-CMDB"),
-				ApplicationCenter: valueOf(row, "应用所属中心"),
+				ApplicationCenter: normalizeIDC(valueOf(row, "应用所属中心")),
 				DBNameRaw:         raw,
 				DBName:            name,
-				DBPrimaryCenter:   valueOf(row, "数据库主库所属中心"),
+				DBPrimaryCenter:   normalizeIDC(valueOf(row, "数据库主库所属中心")),
 				DBRole:            valueOf(row, "目标节点数据库角色"),
 				DBUser:            valueOf(row, "访问数据库使用用户"),
 				Privilege:         valueOf(row, "访问权限"),
@@ -135,7 +135,7 @@ func loadAppIPRows(path string) ([]AppIPRow, error) {
 	for _, row := range rows {
 		item := AppIPRow{
 			ApplicationName:   valueOf(row, "应用名称-CMDB"),
-			ApplicationCenter: valueOf(row, "应用所属中心"),
+			ApplicationCenter: normalizeIDC(valueOf(row, "应用所属中心")),
 			IPs:               splitIPs(valueOf(row, "IP")),
 		}
 		if item.ApplicationName == "" && len(item.IPs) == 0 {

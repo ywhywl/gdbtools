@@ -73,6 +73,7 @@ func parseArgs(argv []string) (Options, error) {
 	fs.StringVar(&options.AppIPFile, "app-ip-file", "", "Path to 应用和ip映射表 (.xlsx, .xlsm, or .csv)")
 	fs.StringVar(&options.OutputFormat, "output-format", "text", "Output format: text, json, csv, or xlsx")
 	fs.StringVar(&options.OutputPath, "output", "", "Output file path; stdout is used when omitted")
+	fs.StringVar(&options.AggregateBy, "aggregate-by", "detail", "Aggregation level: detail, database, or cluster")
 	fs.BoolVar(&options.WithDiagnostics, "with-diagnostics", false, "Render unmatched and parse diagnostics")
 	if err := fs.Parse(argv); err != nil {
 		return Options{}, err
@@ -94,6 +95,11 @@ func parseArgs(argv []string) (Options, error) {
 	case "text", "json", "csv", "xlsx":
 	default:
 		return Options{}, newUsageError("invalid --output-format, expected text, json, csv, or xlsx")
+	}
+	switch options.AggregateBy {
+	case "detail", "database", "cluster":
+	default:
+		return Options{}, newUsageError("invalid --aggregate-by, expected detail, database, or cluster")
 	}
 	if (options.OutputFormat == "csv" || options.OutputFormat == "xlsx") && options.OutputPath == "" {
 		return Options{}, newUsageError("--output is required when --output-format " + options.OutputFormat)

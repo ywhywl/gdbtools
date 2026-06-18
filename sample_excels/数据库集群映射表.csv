@@ -1,0 +1,3 @@
+部门,业务名称,数据库类型,集群名,主库,备库,临时备,同城备,异地备
+交易清算部,gdb-trans,goldendb,BJ13_clearing_branch_00,10.26.24.11,10.26.24.12,,,
+交易清算部,gdb-trans,goldendb,BJ13_clearing_branch_01,10.26.25.11,10.26.25.12,,,

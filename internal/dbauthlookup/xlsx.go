@@ -2,6 +2,7 @@ package dbauthlookup
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/xuri/excelize/v2"
 )
@@ -61,24 +62,26 @@ func writeXLSXRows(file *excelize.File, sheet string, rows [][]string) error {
 
 func detailRows(report Report) [][]string {
 	rows := [][]string{
-		{"业务名称", "数据库类型", "集群名", "主库", "数据库名称", "应用名称-CMDB", "应用所属中心", "数据库主库所属中心", "目标节点数据库角色", "IP", "访问数据库使用用户", "访问权限", "状态", "告警"},
+		{"业务名称", "数据库类型", "集群名", "主库", "数据库名称", "应用名称-CMDB", "应用所属中心", "数据库主库所属中心", "目标节点数据库角色", "IP", "访问数据库使用用户", "访问权限", "备注", "状态", "告警"},
 	}
+	aggregateOutput := report.AggregateBy == "database" || report.AggregateBy == "cluster"
 	for _, row := range report.Rows {
 		rows = append(rows, []string{
 			row.BusinessName,
 			row.DBType,
 			row.ClusterName,
 			row.PrimaryHost,
-			row.DBName,
-			row.ApplicationName,
-			row.ApplicationCenter,
-			row.DBPrimaryCenter,
-			row.DBRole,
+			formatXLSXMultiValue(row.DBName, aggregateOutput),
+			formatXLSXMultiValue(row.ApplicationName, aggregateOutput),
+			formatXLSXMultiValue(row.ApplicationCenter, aggregateOutput),
+			formatXLSXMultiValue(row.DBPrimaryCenter, aggregateOutput),
+			formatXLSXMultiValue(row.DBRole, aggregateOutput),
 			formatIPs(row.IPs),
-			row.DBUser,
+			formatXLSXMultiValue(row.DBUser, aggregateOutput),
 			row.Privilege,
-			row.MatchStatus,
-			row.Warning,
+			formatXLSXMultiValue(row.Remark, aggregateOutput),
+			formatXLSXMultiValue(row.MatchStatus, aggregateOutput),
+			formatXLSXMultiValue(row.Warning, aggregateOutput),
 		})
 	}
 	return rows
@@ -93,4 +96,11 @@ func formatIPs(ips []string) string {
 		result = fmt.Sprintf("%s\n%s", result, ip)
 	}
 	return result
+}
+
+func formatXLSXMultiValue(value string, aggregateOutput bool) string {
+	if !aggregateOutput {
+		return value
+	}
+	return strings.ReplaceAll(value, ",", "\n")
 }
