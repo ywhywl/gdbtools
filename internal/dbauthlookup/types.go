@@ -15,6 +15,7 @@ type Options struct {
 type BusinessClusterRow struct {
 	Department    string `json:"department,omitempty"`
 	BusinessName  string `json:"business_name"`
+	Manager       string `json:"manager,omitempty"`
 	DBType        string `json:"database_type"`
 	ClusterName   string `json:"cluster_name"`
 	PrimaryHost   string `json:"primary_host"`
@@ -59,6 +60,7 @@ type Dataset struct {
 }
 
 type ResultRow struct {
+	Manager           string   `json:"manager,omitempty"`
 	BusinessName      string   `json:"business_name"`
 	DBType            string   `json:"database_type"`
 	ClusterName       string   `json:"cluster_name"`

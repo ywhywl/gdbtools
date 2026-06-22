@@ -62,11 +62,12 @@ func writeXLSXRows(file *excelize.File, sheet string, rows [][]string) error {
 
 func detailRows(report Report) [][]string {
 	rows := [][]string{
-		{"业务名称", "数据库类型", "集群名", "主库", "数据库名称", "应用名称-CMDB", "应用所属中心", "数据库主库所属中心", "目标节点数据库角色", "IP", "访问数据库使用用户", "访问权限", "备注", "状态", "告警"},
+		{"manager", "业务名称", "数据库类型", "集群名", "主库", "数据库名称", "应用名称-CMDB", "应用所属中心", "数据库主库所属中心", "目标节点数据库角色", "IP", "访问数据库使用用户", "访问权限", "备注", "状态", "告警"},
 	}
 	aggregateOutput := report.AggregateBy == "database" || report.AggregateBy == "cluster"
 	for _, row := range report.Rows {
 		rows = append(rows, []string{
+			formatXLSXMultiValue(row.Manager, aggregateOutput),
 			row.BusinessName,
 			row.DBType,
 			row.ClusterName,

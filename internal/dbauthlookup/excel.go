@@ -42,6 +42,7 @@ func loadBusinessClusterRows(path string) ([]BusinessClusterRow, error) {
 		item := BusinessClusterRow{
 			Department:    valueOf(row, "部门"),
 			BusinessName:  valueOf(row, "业务名称"),
+			Manager:       valueOf(row, "manager"),
 			DBType:        valueOf(row, "数据库类型"),
 			ClusterName:   valueOf(row, "集群名"),
 			PrimaryHost:   valueOf(row, "主库"),

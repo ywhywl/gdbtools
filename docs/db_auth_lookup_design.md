@@ -6,6 +6,7 @@
 
 目标输出字段：
 
+- manager
 - 业务名称
 - 数据库类型
 - 集群名
@@ -41,6 +42,7 @@
 截图中可见列：
 
 - `部门`
+- `manager`
 - `业务名称`
 - `数据库类型`
 - `集群名`
@@ -137,6 +139,7 @@
 
 来自 `数据库集群映射表`：
 
+- `manager`
 - `business_name`
 - `database_name_raw`
 - `database_name_normalized[]`
@@ -311,6 +314,7 @@
 
 按用户输入的业务名称，从 `数据库集群映射表` 中取出该业务关联的全部集群信息，至少包括：
 
+- `manager`
 - `业务名称`
 - `数据库类型`
 - `集群名`
@@ -450,6 +454,7 @@
 
 示例字段：
 
+- manager
 - 业务名称
 - 数据库类型
 - 集群名
@@ -469,8 +474,10 @@
 通过 `--aggregate-by` 控制聚合口径：
 
 - `detail`：默认值，不聚合，保持明细视图
-- `database`：按 `业务名称 + 数据库类型 + 集群名 + 主库 + 数据库名称 + 应用名称-CMDB` 聚合
-- `cluster`：按 `业务名称 + 数据库类型 + 集群名 + 主库` 聚合
+- `database`：按 `manager + 业务名称 + 数据库类型 + 集群名 + 主库 + 数据库名称 + 应用名称-CMDB` 聚合
+- `cluster`：按 `manager + 业务名称 + 数据库类型 + 集群名 + 主库` 聚合
+
+`manager` 是聚合分组 key，不作为普通合并字段。不同 `manager` 的授权结果必须拆成不同行，便于最终按每个单独的 manager 执行添加白名单操作。
 
 `database` 聚合时合并以下字段：
 
@@ -737,8 +744,9 @@ BusinessIDCSummary
 - 一个应用对应多个 IP
 - IDC 代号 `BJ13`、`bj13`、`13` 归一化后一致匹配
 - `--aggregate-by detail` 保持明细输出
-- `--aggregate-by database` 按数据库和应用维度聚合
-- `--aggregate-by cluster` 按集群维度聚合
+- `--aggregate-by database` 按 manager、数据库和应用维度聚合
+- `--aggregate-by cluster` 按 manager 和集群维度聚合
+- manager 作为聚合分组 key，不同 manager 不合并
 - 聚合字段去空、去重并稳定排序
 - 数据库命中集群但未命中访问关系
 - 访问关系命中但应用未命中 IP 映射

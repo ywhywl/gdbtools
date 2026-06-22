@@ -196,7 +196,7 @@ func TestBuildReportMatchesNormalizedIDC(t *testing.T) {
 func TestBuildReportAggregatesByDatabase(t *testing.T) {
 	dataset := Dataset{
 		BusinessClusters: []BusinessClusterRow{
-			{BusinessName: "gdb-trans", DBType: "goldendb", ClusterName: "cluster_a", PrimaryHost: "10.0.0.1"},
+			{Manager: "mgr-a", BusinessName: "gdb-trans", DBType: "goldendb", ClusterName: "cluster_a", PrimaryHost: "10.0.0.1"},
 		},
 		DBClusters: []DBClusterRow{
 			{ClusterName: "cluster_a", DBNameRaw: "db_a", DBName: "db_a", DBType: "NUDB"},
@@ -218,6 +218,9 @@ func TestBuildReportAggregatesByDatabase(t *testing.T) {
 		t.Fatalf("expected 1 aggregated row, summary=%d rows=%d", report.Summary.AuthorizationCount, len(report.Rows))
 	}
 	row := report.Rows[0]
+	if row.Manager != "mgr-a" {
+		t.Fatalf("unexpected manager: %q", row.Manager)
+	}
 	if row.ApplicationCenter != "12,13" {
 		t.Fatalf("unexpected application centers: %q", row.ApplicationCenter)
 	}
@@ -229,6 +232,28 @@ func TestBuildReportAggregatesByDatabase(t *testing.T) {
 	}
 	if !reflect.DeepEqual(row.IPs, []string{"172.0.10.1", "172.0.10.2"}) {
 		t.Fatalf("unexpected IPs: %#v", row.IPs)
+	}
+}
+
+func TestBuildReportAggregatesByDatabaseSeparatesManagers(t *testing.T) {
+	dataset := Dataset{
+		BusinessClusters: []BusinessClusterRow{
+			{Manager: "mgr-a", BusinessName: "gdb-trans", DBType: "goldendb", ClusterName: "cluster_a", PrimaryHost: "10.0.0.1"},
+			{Manager: "mgr-b", BusinessName: "gdb-trans", DBType: "goldendb", ClusterName: "cluster_a", PrimaryHost: "10.0.0.1"},
+		},
+		DBClusters: []DBClusterRow{
+			{ClusterName: "cluster_a", DBNameRaw: "db_a", DBName: "db_a", DBType: "NUDB"},
+		},
+		AccessRelations: []AccessRelationRow{
+			{ApplicationName: "app-a", ApplicationCenter: "13", DBName: "db_a", DBUser: "user_a", Privilege: "select"},
+		},
+	}
+	report := buildReport(dataset, Options{BusinessNames: []string{"gdb-trans"}, AggregateBy: "database"})
+	if report.Summary.AuthorizationCount != 2 || len(report.Rows) != 2 {
+		t.Fatalf("expected manager-separated aggregate rows, summary=%d rows=%d", report.Summary.AuthorizationCount, len(report.Rows))
+	}
+	if report.Rows[0].Manager != "mgr-a" || report.Rows[1].Manager != "mgr-b" {
+		t.Fatalf("expected rows sorted and separated by manager, got %#v", report.Rows)
 	}
 }
 
@@ -308,8 +333,8 @@ func TestLoadDatasetFromXLSXInputs(t *testing.T) {
 	accessRelationPath := filepath.Join(dir, "访问关系表.xlsx")
 	appIPPath := filepath.Join(dir, "应用和ip映射表.xlsx")
 	writeXLSXFixture(t, businessClusterPath, [][]string{
-		{"业务名称", "数据库类型", "集群名", "主库"},
-		{"gdb-trans", "goldendb", "BJ13_clearing_branch_00", "10.26.24.11"},
+		{"manager", "业务名称", "数据库类型", "集群名", "主库"},
+		{"mgr-a", "gdb-trans", "goldendb", "BJ13_clearing_branch_00", "10.26.24.11"},
 	})
 	writeXLSXFixture(t, dbClusterPath, [][]string{
 		{"集群名", "数据库名称", "数据库类型"},
@@ -331,6 +356,9 @@ func TestLoadDatasetFromXLSXInputs(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("loadDataset returned error: %v", err)
+	}
+	if len(dataset.BusinessClusters) != 1 || dataset.BusinessClusters[0].Manager != "mgr-a" {
+		t.Fatalf("unexpected manager from business cluster file: %#v", dataset.BusinessClusters)
 	}
 	report := buildReport(dataset, Options{BusinessNames: []string{"gdb-trans"}})
 	if report.Summary.AuthorizationCount != 1 {
@@ -471,6 +499,7 @@ func TestRenderCSVReport(t *testing.T) {
 	report := Report{
 		Rows: []ResultRow{
 			{
+				Manager:           "mgr-a",
 				BusinessName:      "gdb-trans",
 				DBType:            "goldendb",
 				ClusterName:       "BJ13_clearing_branch_00",
@@ -491,8 +520,11 @@ func TestRenderCSVReport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("renderReport returned error: %v", err)
 	}
-	if !strings.Contains(output, "业务名称,数据库类型,集群名") {
+	if !strings.Contains(output, "manager,业务名称,数据库类型,集群名") {
 		t.Fatalf("csv header missing: %s", output)
+	}
+	if !strings.Contains(output, "mgr-a,gdb-trans") {
+		t.Fatalf("csv manager column missing: %s", output)
 	}
 	if !strings.Contains(output, "\"172.0.10.2,172.0.10.3\"") {
 		t.Fatalf("csv did not quote multi-ip cell: %s", output)
@@ -518,6 +550,7 @@ func TestWriteXLSXReport(t *testing.T) {
 	report := Report{
 		Rows: []ResultRow{
 			{
+				Manager:         "mgr-a",
 				BusinessName:    "gdb-trans",
 				DBType:          "goldendb",
 				ClusterName:     "BJ13_clearing_branch_00",
@@ -546,7 +579,21 @@ func TestWriteXLSXReport(t *testing.T) {
 	if !reflect.DeepEqual(sheets, []string{"授权明细"}) {
 		t.Fatalf("unexpected sheets: %v", sheets)
 	}
-	detailValue, err := file.GetCellValue("授权明细", "J2")
+	headerValue, err := file.GetCellValue("授权明细", "A1")
+	if err != nil {
+		t.Fatalf("read header cell: %v", err)
+	}
+	if headerValue != "manager" {
+		t.Fatalf("unexpected first header cell: %q", headerValue)
+	}
+	managerValue, err := file.GetCellValue("授权明细", "A2")
+	if err != nil {
+		t.Fatalf("read manager cell: %v", err)
+	}
+	if managerValue != "mgr-a" {
+		t.Fatalf("unexpected manager cell: %q", managerValue)
+	}
+	detailValue, err := file.GetCellValue("授权明细", "K2")
 	if err != nil {
 		t.Fatalf("read detail cell: %v", err)
 	}

@@ -113,6 +113,7 @@ go run ./cmd/db-auth-lookup \
 - `--business-cluster-file`
   - 必填，数据库集群映射表路径
   - 支持 `.xlsx`、`.xlsm`、`.csv`
+  - 读取 `manager` 列，并作为结果第一列输出
 - `--db-cluster-file`
   - 必填，数据库和集群映射表路径
   - 支持 `.xlsx`、`.xlsm`、`.csv`
@@ -131,8 +132,8 @@ go run ./cmd/db-auth-lookup \
 - `--aggregate-by`
   - 可选，`detail`、`database` 或 `cluster`
   - 默认 `detail`，不聚合，保持授权明细输出
-  - `database` 按 `业务名称 + 数据库类型 + 集群名 + 主库 + 数据库名称 + 应用名称-CMDB` 聚合
-  - `cluster` 按 `业务名称 + 数据库类型 + 集群名 + 主库` 聚合
+  - `database` 按 `manager + 业务名称 + 数据库类型 + 集群名 + 主库 + 数据库名称 + 应用名称-CMDB` 聚合
+  - `cluster` 按 `manager + 业务名称 + 数据库类型 + 集群名 + 主库` 聚合
 - `--with-diagnostics`
   - 可选，输出未匹配和解析告警
   - 使用 `--output` 写文件时，诊断信息仍输出到标准输出，不写入结果文件
@@ -169,6 +170,7 @@ Diagnostics:
 
 明细输出字段包括：
 
+- manager
 - 业务名称
 - 数据库类型
 - 集群名
@@ -185,8 +187,9 @@ Diagnostics:
 聚合输出规则：
 
 - `--aggregate-by detail`：一条授权关系一行，不做聚合
-- `--aggregate-by database`：按数据库和应用聚合，合并应用所属中心、数据库主库所属中心、目标节点数据库角色、IP、访问用户、访问权限、备注、状态和告警
-- `--aggregate-by cluster`：按集群聚合，额外合并数据库名称和应用名称
+- `--aggregate-by database`：按 manager、数据库和应用聚合，合并应用所属中心、数据库主库所属中心、目标节点数据库角色、IP、访问用户、访问权限、备注、状态和告警
+- `--aggregate-by cluster`：按 manager 和集群聚合，额外合并数据库名称和应用名称
+- `manager` 是聚合分组 key，不同 manager 的记录不会合并到同一行，便于按 manager 分别执行添加白名单操作
 - 被合并字段会去空值、去重并稳定排序
 - Excel 输出中 IP 使用单元格内换行展示，多值名称、IDC、角色、用户、备注、状态和告警在聚合输出中也使用单元格内换行展示
 
@@ -213,6 +216,7 @@ IDC 归一化规则：
 当前版本已支持：
 
 - 从 `数据库集群映射表` 按业务名称筛选集群
+- 从 `数据库集群映射表` 读取 manager 并作为聚合分组 key
 - 不传 `--business-name` 时查询全部业务
 - 多次传入 `--business-name` 或使用逗号分隔时查询多个业务
 - 从 `数据库和集群映射表` 找到数据库名称

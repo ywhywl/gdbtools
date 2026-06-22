@@ -18,6 +18,7 @@ func aggregateRows(rows []ResultRow, aggregateBy string) []ResultRow {
 
 func databaseAggregateKey(row ResultRow) string {
 	return strings.Join([]string{
+		row.Manager,
 		row.BusinessName,
 		row.DBType,
 		row.ClusterName,
@@ -29,6 +30,7 @@ func databaseAggregateKey(row ResultRow) string {
 
 func clusterAggregateKey(row ResultRow) string {
 	return strings.Join([]string{
+		row.Manager,
 		row.BusinessName,
 		row.DBType,
 		row.ClusterName,

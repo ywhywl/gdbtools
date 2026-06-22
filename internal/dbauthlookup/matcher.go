@@ -50,6 +50,7 @@ func buildReport(dataset Dataset, options Options) Report {
 					ips = ipByApp[simpleAppKey(access.ApplicationName)]
 				}
 				row := ResultRow{
+					Manager:           business.Manager,
 					BusinessName:      business.BusinessName,
 					DBType:            firstNonEmpty(business.DBType, db.DBType),
 					ClusterName:       business.ClusterName,
@@ -266,6 +267,9 @@ func firstNonEmpty(values ...string) string {
 
 func sortResultRows(rows []ResultRow) {
 	sort.Slice(rows, func(i, j int) bool {
+		if rows[i].Manager != rows[j].Manager {
+			return rows[i].Manager < rows[j].Manager
+		}
 		if rows[i].ClusterName != rows[j].ClusterName {
 			return rows[i].ClusterName < rows[j].ClusterName
 		}
