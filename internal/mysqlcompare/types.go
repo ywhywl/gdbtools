@@ -41,8 +41,12 @@ type Options struct {
 }
 
 type FileConfig struct {
-	DefaultUser     string `json:"default_user"`
-	DefaultPassword string `json:"default_password"`
+	DefaultUser     string   `json:"default_user"`
+	DefaultPassword string   `json:"default_password"`
+	ExcludeSchemas  []string `json:"exclude_schemas"`
+	Users           []string `json:"users"`
+	ExcludeUsers    []string `json:"exclude_users"`
+	UserMatchMode   string   `json:"user_match_mode"`
 }
 
 type ColumnMeta struct {

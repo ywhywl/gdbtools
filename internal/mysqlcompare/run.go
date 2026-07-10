@@ -196,7 +196,7 @@ func parseArgs(argv []string) (Options, error) {
 	fs.SetOutput(os.Stderr)
 	fs.StringVar(&sourceDSN, "source-dsn", "", "Source MySQL DSN")
 	fs.Var(&targetDSNs, "target-dsn", "Target MySQL DSN, repeatable and supports , | newline separators")
-	fs.StringVar(&configPath, "config", "", "JSON config file, supports default_user and default_password")
+	fs.StringVar(&configPath, "config", "", "JSON config file, supports default_user, default_password, exclude_schemas, users, exclude_users, user_match_mode")
 	fs.StringVar(&defaultUser, "default-user", "", "Default MySQL user")
 	fs.StringVar(&defaultPassword, "default-password", "", "Default MySQL password")
 	fs.Var(&sourceSchemas, "source-schemas", "Source schema selectors")
@@ -207,7 +207,7 @@ func parseArgs(argv []string) (Options, error) {
 	fs.Var(&excludeSchemas, "exclude-databases", "Database selectors to exclude")
 	fs.Var(&users, "users", "User or user@host selectors")
 	fs.Var(&excludeUsers, "exclude-users", "User or user@host selectors to exclude")
-	fs.StringVar(&userMatchMode, "user-match-mode", "user_host", "Privilege match mode: user or user_host")
+	fs.StringVar(&userMatchMode, "user-match-mode", "", "Privilege match mode: user or user_host (default user_host)")
 	fs.StringVar(&checkMode, "check", "all", "Check mode: all, structure, privileges")
 	fs.StringVar(&outputFormat, "output-format", "text", "Output format: text or json")
 	if err := fs.Parse(argv); err != nil {
@@ -225,6 +225,21 @@ func parseArgs(argv []string) (Options, error) {
 	}
 	if defaultPassword == "" {
 		defaultPassword = fileConfig.DefaultPassword
+	}
+	if len(excludeSchemas) == 0 {
+		excludeSchemas = append(excludeSchemas, fileConfig.ExcludeSchemas...)
+	}
+	if len(users) == 0 {
+		users = append(users, fileConfig.Users...)
+	}
+	if len(excludeUsers) == 0 {
+		excludeUsers = append(excludeUsers, fileConfig.ExcludeUsers...)
+	}
+	if userMatchMode == "" {
+		userMatchMode = fileConfig.UserMatchMode
+	}
+	if userMatchMode == "" {
+		userMatchMode = "user_host"
 	}
 	source, err := parseConnectionDSN(sourceDSN, "", defaultUser, defaultPassword)
 	if err != nil {

@@ -34,7 +34,6 @@ type templateSelection struct {
 	GlobalTemplate string `json:"global_template"`
 	DNTemplate     string `json:"dn_template"`
 	CNTemplate     string `json:"cn_template"`
-	OSCNTemplate   string `json:"os_cn_template,omitempty"`
 }
 
 type normalizedRow struct {
@@ -309,10 +308,9 @@ func resolveTemplates(serverType string) (templateSelection, error) {
 	}
 	return templateSelection{
 		ServerType:     normalized,
-		GlobalTemplate: fmt.Sprintf("template_%s_cluster", normalized),
-		DNTemplate:     fmt.Sprintf("template_%s_dn", normalized),
-		CNTemplate:     fmt.Sprintf("template_%s_cn", normalized),
-		OSCNTemplate:   fmt.Sprintf("template_%s_cn_OS", normalized),
+		GlobalTemplate: fmt.Sprintf("template_%s_cluster.json", normalized),
+		DNTemplate:     fmt.Sprintf("template_%s_dn.json", normalized),
+		CNTemplate:     fmt.Sprintf("template_%s_cn.json", normalized),
 	}, nil
 }
 
@@ -351,25 +349,17 @@ func buildCNInstallList(row normalizedRow, args runArgs) []map[string]any {
 		if ip == "" {
 			continue
 		}
-		templateName := row.Templates.CNTemplate
-		if role == "OS" {
-			templateName = row.Templates.OSCNTemplate
-		}
 		for _, item := range []struct {
 			Suffix      int
 			ServicePort int
 		}{{1, 3306}, {2, 3307}} {
 			installUser := fmt.Sprintf("%sdbproxy%d", args.Prefix, item.Suffix)
-			entry := map[string]any{
+			items = append(items, map[string]any{
 				"ip":          ip,
 				"installPath": fmt.Sprintf("%s/%s", args.BasePath, installUser),
 				"installUser": installUser,
 				"servicePort": item.ServicePort,
-			}
-			if role == "OS" {
-				entry["templateName"] = templateName
-			}
-			items = append(items, entry)
+			})
 		}
 	}
 	return items
@@ -520,16 +510,12 @@ func pollCreateClusterProgress(ctx context.Context, client *insightopen.Client, 
 }
 
 func buildTemplateSelectionOutput(row normalizedRow) map[string]any {
-	out := map[string]any{
+	return map[string]any{
 		"server_type":     row.Templates.ServerType,
 		"global_template": row.Templates.GlobalTemplate,
 		"dn_template":     row.Templates.DNTemplate,
 		"cn_template":     row.Templates.CNTemplate,
 	}
-	if strings.TrimSpace(row.RoleIPs["OS"]) != "" {
-		out["os_cn_template"] = row.Templates.OSCNTemplate
-	}
-	return out
 }
 
 func logTemplateSelection(rows []normalizedRow) {

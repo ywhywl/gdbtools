@@ -51,14 +51,12 @@ num,cluster_name,cluster_group_name,M,S,TS,LS,OS,server_type
 - `global_template = template_{server_type}_cluster`
 - `dn_template = template_{server_type}_dn`
 - `cn_template = template_{server_type}_cn`
-- `os_cn_template = template_{server_type}_cn_OS`
 
 例如 `server_type=vm_l` 时：
 
 - `template_vm_l_cluster`
 - `template_vm_l_dn`
 - `template_vm_l_cn`
-- `template_vm_l_cn_OS`
 
 ## 节点生成规则
 
