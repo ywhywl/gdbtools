@@ -56,6 +56,11 @@ func NewSSHAuth(keyPath, password, passwordB64 string) (*SSHAuth, error) {
 		if err != nil {
 			return nil, fmt.Errorf("read key file %s: %w", keyPath, err)
 		}
+		// Pre-validate key parseability
+		if _, err := parsePrivateKey(data, ""); err != nil {
+			// Try with password hint
+			return nil, fmt.Errorf("parse key file %s: %w (if key is encrypted, provide --ssh-password)", keyPath, err)
+		}
 		auth.KeyPath = keyPath
 		auth.KeyData = data
 		return auth, nil
@@ -72,6 +77,9 @@ func NewSSHAuth(keyPath, password, passwordB64 string) (*SSHAuth, error) {
 		}
 		for _, p := range candidates {
 			if data, err := os.ReadFile(p); err == nil {
+				if _, err := parsePrivateKey(data, ""); err != nil {
+					continue // skip unusable key
+				}
 				auth.KeyPath = p
 				auth.KeyData = data
 				return auth, nil
