@@ -280,29 +280,34 @@ func (c *Client) DetectVirt() string {
 	return "none"
 }
 
-// parsePrivateKey tries to parse a PEM-encoded private key.
-// For encrypted keys, it tries the provided password.
+// parsePrivateKey tries to parse a private key.
+// ssh.ParsePrivateKey handles both OpenSSH format (id_ed25519) and
+// traditional PEM format (RSA, ECDSA) automatically.
+// For encrypted keys, it uses the provided password.
 func parsePrivateKey(keyData []byte, password string) (ssh.Signer, error) {
-	block, _ := pem.Decode(keyData)
-	if block == nil {
-		// Try OpenSSH format (ed25519 etc.)
-		signer, err := ssh.ParsePrivateKey(keyData)
-		if err != nil {
-			return nil, err
-		}
+	// First try: direct parse (works for both OpenSSH and PEM formats without encryption)
+	signer, err := ssh.ParsePrivateKey(keyData)
+	if err == nil {
 		return signer, nil
 	}
 
-	if x509.IsEncryptedPEMBlock(block) { //nolint:staticcheck // legacy RFC 1423 format, handled for compatibility
-		if password == "" {
-			return nil, fmt.Errorf("key is encrypted but no password provided")
-		}
-		decoded, err := x509.DecryptPEMBlock(block, []byte(password)) //nolint:staticcheck
-		if err != nil {
-			return nil, fmt.Errorf("decrypt key failed: %w", err)
+	// If it failed and we have a password, try encrypted PEM handling
+	if password == "" {
+		return nil, err
+	}
+
+	block, _ := pem.Decode(keyData)
+	if block == nil {
+		return nil, err
+	}
+
+	if x509.IsEncryptedPEMBlock(block) { //nolint:staticcheck // legacy RFC 1423 format
+		decoded, decErr := x509.DecryptPEMBlock(block, []byte(password)) //nolint:staticcheck
+		if decErr != nil {
+			return nil, fmt.Errorf("decrypt key failed: %w", decErr)
 		}
 		return ssh.ParsePrivateKey(decoded)
 	}
 
-	return ssh.ParsePrivateKey(block.Bytes)
+	return nil, err
 }
