@@ -494,21 +494,6 @@ func buildPayload(row normalizedRow, args runArgs, passwordB64 string) map[strin
 		{"type": "CN", "templateName": row.Templates.CNTemplate},
 		{"type": "GLOBAL", "templateName": row.Templates.GlobalTemplate},
 	}
-	if row.Templates.ClusterTemplate != "" {
-		templateInfos = append(templateInfos, map[string]any{"type": "cluster", "templateName": row.Templates.ClusterTemplate})
-	}
-	if row.Templates.GTMTemplate != "" {
-		templateInfos = append(templateInfos, map[string]any{"type": "gtm", "templateName": row.Templates.GTMTemplate})
-	}
-	if row.Templates.LDSTemplate != "" {
-		templateInfos = append(templateInfos, map[string]any{"type": "lds", "templateName": row.Templates.LDSTemplate})
-	}
-	if row.Templates.SystemTemplate != "" {
-		templateInfos = append(templateInfos, map[string]any{"type": "system", "templateName": row.Templates.SystemTemplate})
-	}
-	if row.Templates.DnOSTemplate != "" {
-		templateInfos = append(templateInfos, map[string]any{"type": "dn_OS", "templateName": row.Templates.DnOSTemplate})
-	}
 
 	return map[string]any{
 		"configMode": 1,
