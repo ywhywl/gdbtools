@@ -72,11 +72,39 @@ JSON 示例：
 | `--poll-timeout` | 轮询超时秒数，默认 `3600` |
 | `--verify-ssl` | 启用 SSL 证书校验，默认关闭 |
 | `--output-json` | 以 JSON 输出结果 |
+| `--debug` | 打印请求和响应的 debug 日志，默认关闭 |
+| `--skip-check` | 跳过主机前置检查，默认开启检查 |
+| `--check-timeout` | 单台主机检查超时秒数，默认 `15` |
 
 注意：
 
 - 必须提供 Insight 鉴权参数，鉴权头为 `username/password`
 - 如果未显式提供 `--ssh-password` 且未修改 `--ssh-password-b64`，命令会使用默认测试值 `c2VjcmV0`
+
+## 前置检查
+
+命令默认在纳管前通过 SSH 检查每台主机，未通过检查的主机会被跳过。
+
+### 检查规则
+
+| 检查项 | 物理机 | 虚拟机 |
+| --- | --- | --- |
+| 操作系统 | 必须为麒麟（kylin/neokylin），CentOS 不通过 | 必须为麒麟（kylin/neokylin），CentOS 不通过 |
+| CPU 架构 | 记录（aarch64 / x86\_64） | 记录（aarch64 / x86\_64） |
+| /data 挂载 | 必须挂载 | 不能挂载 |
+| /data 可用空间 | ≥ 3072 GB (3T) | — |
+| CPU 核心数 | ≥ 50 | < 20 |
+| 内存 | ≥ 200 GB | 24 GB ~ 48 GB |
+
+### 检查输出
+
+```
+[check] 检查主机: 10.0.0.21
+[check] PASS 10.0.0.21: os=kylin arch=aarch64 virt=none cpu=64 mem=256G data_mount=true data_avail=4096G
+[check] FAIL 10.0.0.22: os=centos arch=x86_64 virt=kvm cpu=4 mem=8G data_mount=false data_avail=0G
+前置检查完成: 通过 1, 未通过 1
+进入纳管的主机: 1 台
+```
 
 ## 使用示例
 

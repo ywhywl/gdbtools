@@ -15,7 +15,7 @@ go run ./cmd/insight-batch-create --help
 
 ## CSV 字段说明
 
-每行表示一个待创建集群，CSV 必须包含以下字段：
+每行表示一个待创建集群，CSV 字段如下：
 
 | 字段名 | 是否必填 | 说明 |
 | --- | --- | --- |
@@ -27,7 +27,15 @@ go run ./cmd/insight-batch-create --help
 | `TS` | 否 | TS 角色节点 IP |
 | `LS` | 否 | LS 角色节点 IP |
 | `OS` | 否 | OS 角色节点 IP |
-| `server_type` | 是 | 服务器类型，用于自动扩展模板名称 |
+| `server_type` | 否（见下方说明） | 服务器类型，用于指定预期模版 |
+
+**`server_type` 填写规则**：
+
+- 默认开启 `--auto-select-template`，此时 `server_type` 变为**可选**
+- 如果 CSV 填写了 `server_type`，程序会通过 SSH 检测各主机内存，并与 CSV 值比对：
+  - 一致 → 正常继续
+  - 不一致 → **默认报错退出**，可通过 `--ignore-template-mismatch` 或 `--skip-template-check` 改变行为
+- 如果 CSV 未填写 `server_type`，完全以自动检测结果为准
 
 约束：
 
@@ -37,34 +45,79 @@ go run ./cmd/insight-batch-create --help
 - `server_type` 仅支持：`vm_l`、`vm_m`、`vm_h`、`pm`、`vm_lowercase_0`
 - 当前仅支持 `--gtm-use-mode=1`
 
-示例：
+示例（填写 server_type）：
 
 ```csv
 num,cluster_name,cluster_group_name,M,S,TS,LS,OS,server_type
 1,prod_cluster_full,group_a,172.27.17.25,172.27.21.156,172.27.21.158,,172.27.21.157,vm_l
 ```
 
-## 模板生成规则
+示例（不填写 server_type，完全自动检测）：
 
-根据 `server_type` 自动生成模板名：
+```csv
+num,cluster_name,cluster_group_name,M,S,TS,LS,OS
+1,prod_cluster_full,group_a,172.27.17.25,172.27.21.156,,,172.27.21.157,
+```
 
-- `global_template = template_{server_type}_cluster`
-- `dn_template = template_{server_type}_dn`
-- `cn_template = template_{server_type}_cn`
+## 模版自动选择（默认开启）
+
+程序默认通过 SSH 登录各主机，采集内存和虚拟化信息后自动选择模版。
+
+### 内存 → server_type 映射规则
+
+| 虚拟化类型 | 内存 MemGB | 选定 server_type |
+|-----------|-----------|-----------------|
+| 物理机 (`Virt == "none"`) | 任意 | `pm` |
+| 虚拟机 | < 24 | **报错退出** |
+| 虚拟机 | >= 24 且 < 32 | `vm_l` |
+| 虚拟机 | >= 32 且 < 48 | `vm_m` |
+| 虚拟机 | >= 48 | `vm_h` |
+
+### 同集群多 IP 处理
+
+- 同集群所有 IP 必须检测到**相同** server_type，否则报错退出
+- 任一 IP SSH 连接失败，整批退出
+
+### 虚拟机内存 < 24G 豁免
+
+通过 `--allow-low-memory-vm` 开关，可将 < 24G 虚拟机的"报错退出"降级为**告警日志 + 使用 vm_l 继续**。
+
+### CSV 指定值与自动检测冲突处理
+
+| `--ignore-template-mismatch` | `--skip-template-check` | 行为 |
+|------------------------------|-------------------------|------|
+| 未指定 | 未指定 | 不一致则**报错退出**（默认） |
+| 指定 | 未指定 | 使用自动检测结果 |
+| 未指定 | 指定 | 使用 CSV 指定值 |
+| 指定 | 指定 | 两者互斥，报错退出 |
+
+## 模版生成规则
+
+根据最终确定的 `server_type` 自动生成模板名：
+
+| 类型 | 未开启 `--case-sensitive` | 开启 `--case-sensitive` |
+|------|--------------------------|------------------------|
+| GLOBAL | `template_{server_type}_cluster.json` | `template_{server_type}_lowercase_0_cluster.json` |
+| DN | `template_{server_type}_dn.json` | `template_{server_type}_lowercase_0_dn.json` |
+| CN | `template_{server_type}_cn.json` | `template_{server_type}_lowercase_0_cn.json` |
+| cluster | `template_{server_type}_cluster.json` | `template_{server_type}_lowercase_0_cluster.json` |
+| gtm | `template_{server_type}_gtm.json` | `template_{server_type}_lowercase_0_gtm.json` |
+| lds | `template_{server_type}_lds.json` | `template_{server_type}_lowercase_0_lds.json` |
+| system | `template_{server_type}_system.json` | `template_{server_type}_lowercase_0_system.json` |
+| dn_OS | `template_{server_type}_dn_OS.json` | `template_{server_type}_lowercase_0_dn_OS.json` |
 
 例如 `server_type=vm_l` 时：
 
-- `template_vm_l_cluster`
-- `template_vm_l_dn`
-- `template_vm_l_cn`
+- 未开启大小写敏感：`template_vm_l_cluster.json`、`template_vm_l_dn.json`、`template_vm_l_cn.json` 等
+- 开启大小写敏感：`template_vm_l_lowercase_0_cluster.json`、`template_vm_l_lowercase_0_dn.json`、`template_vm_l_lowercase_0_cn.json` 等
 
 ## 节点生成规则
 
 CN 规则：
 
 - 每个非空角色 IP 生成两个 CN：
-- `dbproxy1`，`servicePort=3306`
-- `dbproxy2`，`servicePort=3307`
+  - `dbproxy1`，`servicePort=3306`
+  - `dbproxy2`，`servicePort=3307`
 - 安装用户为 `{prefix}dbproxy1`、`{prefix}dbproxy2`
 
 DN 规则：
@@ -119,6 +172,21 @@ DN `teamId` 映射：
 | `--output` | 将结构化结果写入 JSON 文件 |
 | `--format` | 输出格式：`json` 或 `text` |
 
+### 模版自动选择相关参数
+
+| 参数 | 说明 | 默认值 |
+| --- | --- | --- |
+| `--auto-select-template` | 通过 SSH 检测内存自动选择模版 | `true`（默认开启） |
+| `--ssh-user` | SSH 用户名（开启自动选择时必填） | - |
+| `--ssh-password` | SSH 密码明文 | - |
+| `--ssh-password-b64` | SSH 密码 base64 | - |
+| `--ssh-port` | SSH 端口 | `22` |
+| `--ssh-timeout` | 单台 SSH 超时秒数 | `15` |
+| `--case-sensitive` | 数据库表名大小写敏感，开启后所有模版名附加 `_lowercase_0` | `false` |
+| `--ignore-template-mismatch` | CSV 指定与自动检测不一致时，采用自动检测结果 | `false` |
+| `--skip-template-check` | CSV 指定与自动检测不一致时，采用 CSV 指定值 | `false` |
+| `--allow-low-memory-vm` | 允许虚拟机内存低于 24G 时不报错，降级使用 vm_l | `false` |
+
 鉴权说明：
 
 - 所有请求头都会带上：
@@ -128,6 +196,65 @@ DN `teamId` 映射：
 
 ## 使用示例
 
+基本使用（自动检测模版）：
+
+```bash
+go run ./cmd/insight-batch-create \
+  --api 10.0.0.10:8444 \
+  --insight-user admin \
+  --insight-password 'insight-password' \
+  --csv ./clusters.csv \
+  --ssh-user deploy \
+  --ssh-password 'ssh-password' \
+  --ins-user-pwd 'plain-password' \
+  --wait-completion \
+  --output ./batch_create_result.json
+```
+
+使用 `--case-sensitive`（表名大小写敏感）：
+
+```bash
+go run ./cmd/insight-batch-create \
+  --api 10.0.0.10:8444 \
+  --insight-user admin \
+  --insight-password 'insight-password' \
+  --csv ./clusters.csv \
+  --ssh-user deploy \
+  --ssh-password-b64 'c3NoLXBhc3N3b3Jk' \
+  --case-sensitive \
+  --ins-user-pwd 'plain-password'
+```
+
+允许虚拟机内存低于 24G：
+
+```bash
+go run ./cmd/insight-batch-create \
+  --api 10.0.0.10:8444 \
+  --insight-user admin \
+  --insight-password 'insight-password' \
+  --csv ./clusters.csv \
+  --ssh-user deploy \
+  --ssh-password 'ssh-password' \
+  --allow-low-memory-vm \
+  --ins-user-pwd 'plain-password'
+```
+
+CSV 指定与自动检测不一致时，采用自动检测结果：
+
+```bash
+go run ./cmd/insight-batch-create \
+  --api 10.0.0.10:8444 \
+  --insight-user admin \
+  --insight-password 'insight-password' \
+  --csv ./clusters.csv \
+  --ssh-user deploy \
+  --ssh-password 'ssh-password' \
+  --ignore-template-mismatch \
+  --ins-user-pwd 'plain-password'
+```
+
+关闭自动选择（使用 CSV 指定值，恢复旧版行为）：
+
 ```bash
 go run ./cmd/insight-batch-create \
   --api 10.0.0.10:8444 \
@@ -135,8 +262,7 @@ go run ./cmd/insight-batch-create \
   --insight-password 'insight-password' \
   --csv ./clusters.csv \
   --ins-user-pwd 'plain-password' \
-  --wait-completion \
-  --output ./batch_create_result.json
+  --auto-select-template=false
 ```
 
 仅渲染请求体：
@@ -147,6 +273,8 @@ go run ./cmd/insight-batch-create \
   --insight-user admin \
   --insight-password 'insight-password' \
   --csv ./clusters.csv \
+  --ssh-user deploy \
+  --ssh-password 'ssh-password' \
   --ins-user-pwd 'plain-password' \
   --dry-run
 ```
@@ -167,13 +295,21 @@ go run ./cmd/insight-batch-create \
 - `cluster_name`
 - `cluster_group_name`
 - `server_type`
-- `template_selection`
+- `template_selection`（含所有模版名称）
 - `status`
 - `task_id`
 - `attempt`
 - `request_payload`
 - `response`
 - `error`
+
+执行前会打印模版选择汇总表（stderr）：
+
+```
+集群           server_type  来源    DN 模版                            CN 模版                            GLOBAL 模版
+cluster_01     vm_l         自动    template_vm_l_dn.json              template_vm_l_cn.json              template_vm_l_cluster.json
+cluster_02     pm           CSV     template_pm_lowercase_0_dn.json    template_pm_lowercase_0_cn.json    template_pm_lowercase_0_cluster.json
+```
 
 ## 返回码
 

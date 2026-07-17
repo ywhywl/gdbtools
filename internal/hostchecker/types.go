@@ -1,0 +1,39 @@
+package hostchecker
+
+// SysInfo holds system information collected from a host via SSH.
+type SysInfo struct {
+	IP          string
+	Virt        string // "none" = physical, otherwise VM type
+	CPU         int    // CPU core count
+	MemGB       int    // memory in GB
+	HasData     bool   // whether /data is mounted
+	DataAvailGB int    // /data available space in GB
+	OS          string // "kylin", "centos", or other
+	CPUArch     string // "aarch64", "x86_64", etc.
+}
+
+// CheckResult holds the result of checking a single host.
+type CheckResult struct {
+	IP      string
+	Passed  bool
+	Reasons []string // failure reasons (empty if passed)
+	SysInfo *SysInfo
+}
+
+// Rule thresholds
+const (
+	// Physical machine requirements
+	PhysDataAvailMin   = 3072 // 3T in GB
+	PhysCPUMin         = 50
+	PhysMemMin         = 200
+
+	// VM requirements
+	VMCPUMax           = 19 // must be < 20
+	VMMemMin           = 24
+	VMMemMax           = 48
+
+	// Supported OS IDs
+	OSKylin      = "kylin"
+	OSCentOS     = "centos"
+	OSNeoKylin   = "neokylin"
+)

@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sort"
 	"strings"
+	"text/tabwriter"
 	"time"
 
 	"github.com/ywhywl/gdbtools/internal/insightinput"
@@ -23,17 +25,23 @@ var (
 		"pm":             {},
 		"vm_lowercase_0": {},
 	}
-	requiredHeaders = []string{"num", "cluster_name", "cluster_group_name", "M", "S", "TS", "LS", "OS", "server_type"}
-	roleSequence    = []string{"M", "S", "LS", "OS", "TS"}
-	roleToTeamID    = map[string]int{"M": 1, "S": 2, "LS": 3, "OS": 4, "TS": 5}
-	roleToDBRole    = map[string]int{"M": 1, "S": 0, "TS": 0, "LS": 0, "OS": 2}
+	requiredHeadersAlways = []string{"num", "cluster_name", "cluster_group_name", "M", "S", "TS", "LS", "OS"}
+	requiredHeaders       = []string{"num", "cluster_name", "cluster_group_name", "M", "S", "TS", "LS", "OS", "server_type"}
+	roleSequence          = []string{"M", "S", "LS", "OS", "TS"}
+	roleToTeamID          = map[string]int{"M": 1, "S": 2, "LS": 3, "OS": 4, "TS": 5}
+	roleToDBRole          = map[string]int{"M": 1, "S": 0, "TS": 0, "LS": 0, "OS": 2}
 )
 
 type templateSelection struct {
-	ServerType     string `json:"server_type"`
-	GlobalTemplate string `json:"global_template"`
-	DNTemplate     string `json:"dn_template"`
-	CNTemplate     string `json:"cn_template"`
+	ServerType      string `json:"server_type"`
+	GlobalTemplate  string `json:"global_template"`
+	DNTemplate      string `json:"dn_template"`
+	CNTemplate      string `json:"cn_template"`
+	ClusterTemplate string `json:"cluster_template,omitempty"`
+	GTMTemplate     string `json:"gtm_template,omitempty"`
+	LDSTemplate     string `json:"lds_template,omitempty"`
+	SystemTemplate  string `json:"system_template,omitempty"`
+	DnOSTemplate    string `json:"dn_os_template,omitempty"`
 }
 
 type normalizedRow struct {
@@ -43,6 +51,7 @@ type normalizedRow struct {
 	ClusterGroupName string
 	RoleIPs          map[string]string
 	ServerType       string
+	CSVServerType    string // CSV-specified value, "" when auto-selected
 	Templates        templateSelection
 }
 
@@ -68,6 +77,17 @@ type runArgs struct {
 	DryRun         bool
 	Output         string
 	Format         string
+	// Template auto-selection
+	AutoSelect     bool
+	SSHUser        string
+	SSHPassword    string
+	SSHPasswordB64 string
+	SSHPort        int
+	SSHTimeout     int
+	CaseSensitive  bool
+	IgnoreMismatch bool
+	SkipCheck      bool
+	AllowLowMemVM  bool
 }
 
 type clusterProgress struct {
@@ -98,10 +118,20 @@ func Run(args []string) (int, error) {
 	if err != nil {
 		return 3, renderTopLevelError(err)
 	}
-	rows, err := loadRows(parsedArgs.CSV)
+
+	rows, err := loadRows(parsedArgs.CSV, parsedArgs.AutoSelect)
 	if err != nil {
 		return 3, renderTopLevelError(err)
 	}
+
+	// Phase 2: SSH-based template auto-selection
+	if parsedArgs.AutoSelect {
+		rows, err = applyAutoSelect(rows, parsedArgs)
+		if err != nil {
+			return 3, renderTopLevelError(err)
+		}
+	}
+
 	if parsedArgs.GTMUseMode != 1 {
 		return 3, renderTopLevelError(fmt.Errorf("第一版仅支持 --gtm-use-mode=1"))
 	}
@@ -196,6 +226,18 @@ func parseArgs(args []string) (runArgs, error) {
 	fs.BoolVar(&parsed.DryRun, "dry-run", false, "只渲染请求体")
 	fs.StringVar(&parsed.Output, "output", "", "写入 JSON 文件")
 	fs.StringVar(&parsed.Format, "format", "json", "输出格式")
+
+	// Template auto-selection flags
+	fs.BoolVar(&parsed.AutoSelect, "auto-select-template", true, "通过 SSH 检测内存自动选择模版（默认开启）")
+	fs.StringVar(&parsed.SSHUser, "ssh-user", "", "SSH 用户名（自动选择模版时需要）")
+	fs.StringVar(&parsed.SSHPassword, "ssh-password", "", "SSH 密码明文")
+	fs.StringVar(&parsed.SSHPasswordB64, "ssh-password-b64", "", "SSH 密码 base64")
+	fs.IntVar(&parsed.SSHPort, "ssh-port", 22, "SSH 端口")
+	fs.IntVar(&parsed.SSHTimeout, "ssh-timeout", 15, "单台 SSH 超时秒数")
+	fs.BoolVar(&parsed.CaseSensitive, "case-sensitive", false, "数据库表名大小写敏感，开启后 DN 模版名附加 _lowercase_0 后缀")
+	fs.BoolVar(&parsed.IgnoreMismatch, "ignore-template-mismatch", false, "自动选择与 CSV 指定不一致时，使用自动选择的结果")
+	fs.BoolVar(&parsed.SkipCheck, "skip-template-check", false, "自动选择与 CSV 指定不一致时，使用 CSV 指定值继续执行")
+	fs.BoolVar(&parsed.AllowLowMemVM, "allow-low-memory-vm", false, "允许虚拟机内存低于24G时不报错，降级使用 vm_l 模版")
 	insightopen.AddAuthFlags(fs, &parsed.Auth)
 
 	verifySSL := false
@@ -213,6 +255,17 @@ func parseArgs(args []string) (runArgs, error) {
 	if strings.TrimSpace(parsed.CSV) == "" {
 		return parsed, fmt.Errorf("--csv is required")
 	}
+	if parsed.AutoSelect {
+		if strings.TrimSpace(parsed.SSHUser) == "" {
+			return parsed, fmt.Errorf("开启 --auto-select-template 时，--ssh-user 为必填项")
+		}
+		if strings.TrimSpace(parsed.SSHPassword) == "" && strings.TrimSpace(parsed.SSHPasswordB64) == "" {
+			return parsed, fmt.Errorf("开启 --auto-select-template 时，必须提供 --ssh-password 或 --ssh-password-b64")
+		}
+	}
+	if parsed.IgnoreMismatch && parsed.SkipCheck {
+		return parsed, fmt.Errorf("--ignore-template-mismatch 和 --skip-template-check 不能同时指定")
+	}
 	return parsed, nil
 }
 
@@ -226,7 +279,20 @@ func resolvePasswordB64(password, passwordB64 string) (string, error) {
 	return base64.StdEncoding.EncodeToString([]byte(password)), nil
 }
 
-func loadRows(path string) ([]normalizedRow, error) {
+// resolveSSHPasswordB64 returns the SSH password in base64 form.
+func resolveSSHPasswordB64(password, passwordB64 string) (string, error) {
+	if strings.TrimSpace(passwordB64) != "" {
+		return strings.TrimSpace(passwordB64), nil
+	}
+	if password == "" {
+		return "", fmt.Errorf("必须提供 --ssh-password 或 --ssh-password-b64")
+	}
+	return base64.StdEncoding.EncodeToString([]byte(password)), nil
+}
+
+// loadRows parses the CSV and validates headers. When autoSelect is true,
+// server_type is optional; otherwise it is required.
+func loadRows(path string, autoSelect bool) ([]normalizedRow, error) {
 	rawRows, err := insightinput.ParseCSVInput(path)
 	if err != nil {
 		return nil, err
@@ -241,7 +307,11 @@ func loadRows(path string) ([]normalizedRow, error) {
 			headers[key] = struct{}{}
 		}
 	}
-	for _, header := range requiredHeaders {
+	req := requiredHeadersAlways
+	if !autoSelect {
+		req = requiredHeaders
+	}
+	for _, header := range req {
 		if _, ok := headers[header]; !ok {
 			return nil, fmt.Errorf("CSV 缺少必填列: %s", header)
 		}
@@ -280,10 +350,13 @@ func loadRows(path string) ([]normalizedRow, error) {
 		}
 
 		serverType := strings.TrimSpace(row["server_type"])
-		if serverType == "" {
+		csvServerType := serverType
+
+		if serverType == "" && !autoSelect {
 			return nil, fmt.Errorf("第 %d 行 server_type 不能为空", i+1)
 		}
-		templates, err := resolveTemplates(serverType)
+
+		templates, err := resolveTemplates(serverType, false)
 		if err != nil {
 			return nil, err
 		}
@@ -295,22 +368,121 @@ func loadRows(path string) ([]normalizedRow, error) {
 			ClusterGroupName: strings.TrimSpace(row["cluster_group_name"]),
 			RoleIPs:          roleIPs,
 			ServerType:       serverType,
+			CSVServerType:    csvServerType,
 			Templates:        templates,
 		})
 	}
 	return rows, nil
 }
 
-func resolveTemplates(serverType string) (templateSelection, error) {
+// applyAutoSelect performs SSH-based template detection for each cluster,
+// validates against CSV values, and updates rows accordingly.
+func applyAutoSelect(rows []normalizedRow, args runArgs) ([]normalizedRow, error) {
+	sshPasswordB64, err := resolveSSHPasswordB64(args.SSHPassword, args.SSHPasswordB64)
+	if err != nil {
+		return nil, err
+	}
+
+	// Collect unique IPs per cluster (only non-empty IPs).
+	clusterIPs := make(map[string][]string)
+	clusterRows := make(map[string][]int) // clusterName -> row indices
+	for i, row := range rows {
+		var ips []string
+		for _, role := range roleSequence {
+			ip := row.RoleIPs[role]
+			if ip != "" {
+				ips = append(ips, ip)
+			}
+		}
+		clusterIPs[row.ClusterName] = ips
+		clusterRows[row.ClusterName] = append(clusterRows[row.ClusterName], i)
+	}
+
+	// SSH detect server_type per cluster.
+	clusterDetected := make(map[string]string)
+	sshTimeout := time.Duration(args.SSHTimeout) * time.Second
+	for _, name := range sortedKeys(clusterIPs) {
+		ips := clusterIPs[name]
+		if len(ips) == 0 {
+			return nil, fmt.Errorf("集群 %s 无任何有效 IP 地址", name)
+		}
+		log.Printf("[模版检测] 集群 %s: 正在通过 SSH 检测 %d 台主机...", name, len(ips))
+		st, err := resolveClusterServerType(ips, args.SSHPort, args.SSHUser, sshPasswordB64, sshTimeout, args.AllowLowMemVM)
+		if err != nil {
+			return nil, fmt.Errorf("集群 %s 模版检测失败: %w", name, err)
+		}
+		clusterDetected[name] = st
+		log.Printf("[模版检测] 集群 %s: 检测到 server_type=%s", name, st)
+	}
+
+	// Apply detected types and handle CSV mismatches.
+	for i, row := range rows {
+		detected := clusterDetected[row.ClusterName]
+		csvVal := row.CSVServerType
+
+		if csvVal == "" || detected == csvVal {
+			// No conflict: update row with detected type.
+			templates, err := resolveTemplates(detected, args.CaseSensitive)
+			if err != nil {
+				return nil, err
+			}
+			rows[i].ServerType = detected
+			rows[i].Templates = templates
+			continue
+		}
+
+		// Conflict: CSV value differs from detected.
+		if args.IgnoreMismatch {
+			log.Printf("[模版检测] 集群 %s: CSV 指定 %s，自动检测 %s — 使用自动选择结果 (--ignore-template-mismatch)", row.ClusterName, csvVal, detected)
+			templates, err := resolveTemplates(detected, args.CaseSensitive)
+			if err != nil {
+				return nil, err
+			}
+			rows[i].ServerType = detected
+			rows[i].Templates = templates
+		} else if args.SkipCheck {
+			log.Printf("[模版检测] 集群 %s: CSV 指定 %s，自动检测 %s — 使用 CSV 指定值 (--skip-template-check)", row.ClusterName, csvVal, detected)
+			// Keep CSV value, re-resolve templates with caseSensitive.
+			templates, err := resolveTemplates(csvVal, args.CaseSensitive)
+			if err != nil {
+				return nil, err
+			}
+			rows[i].ServerType = csvVal
+			rows[i].Templates = templates
+		} else {
+			return nil, fmt.Errorf("集群 %s: CSV 指定 server_type=%s，自动检测为 %s。请检查服务器配置，或使用 --ignore-template-mismatch（采用自动检测结果）/ --skip-template-check（采用 CSV 值）继续", row.ClusterName, csvVal, detected)
+		}
+	}
+
+	return rows, nil
+}
+
+// resolveTemplates builds a templateSelection from server_type.
+// When caseSensitive is true, _lowercase_0 is appended to the server_type part of ALL template names.
+func resolveTemplates(serverType string, caseSensitive bool) (templateSelection, error) {
 	normalized := strings.TrimSpace(serverType)
+	if normalized == "" {
+		return templateSelection{}, fmt.Errorf("server_type 为空")
+	}
 	if _, ok := supportedServerTypes[normalized]; !ok {
 		return templateSelection{}, fmt.Errorf("不支持的 server_type: %s，当前仅支持 pm, vm_h, vm_l, vm_lowercase_0, vm_m", normalized)
 	}
+
+	suffix := ""
+	if caseSensitive {
+		suffix = "_lowercase_0"
+	}
+
 	return templateSelection{
-		ServerType:     normalized,
-		GlobalTemplate: fmt.Sprintf("template_%s_cluster.json", normalized),
-		DNTemplate:     fmt.Sprintf("template_%s_dn.json", normalized),
-		CNTemplate:     fmt.Sprintf("template_%s_cn.json", normalized),
+		ServerType:      normalized,
+		GlobalTemplate:  fmt.Sprintf("template_%s_cluster.json", normalized+suffix),
+		DNTemplate:      fmt.Sprintf("template_%s_dn.json", normalized+suffix),
+		CNTemplate:      fmt.Sprintf("template_%s_cn.json", normalized+suffix),
+		ClusterTemplate: fmt.Sprintf("template_%s_cluster.json", normalized+suffix),
+		GTMTemplate:     fmt.Sprintf("template_%s_gtm.json", normalized+suffix),
+		LDSTemplate:     fmt.Sprintf("template_%s_lds.json", normalized+suffix),
+		SystemTemplate:  fmt.Sprintf("template_%s_system.json", normalized+suffix),
+		DnOSTemplate:    fmt.Sprintf("template_%s_dn_OS.json", normalized+suffix),
 	}, nil
 }
 
@@ -319,6 +491,28 @@ func buildPayload(row normalizedRow, args runArgs, passwordB64 string) map[strin
 	if clusterDesc == "" {
 		clusterDesc = row.ClusterName
 	}
+
+	templateInfos := []map[string]any{
+		{"type": "DN", "templateName": row.Templates.DNTemplate},
+		{"type": "CN", "templateName": row.Templates.CNTemplate},
+		{"type": "GLOBAL", "templateName": row.Templates.GlobalTemplate},
+	}
+	if row.Templates.ClusterTemplate != "" {
+		templateInfos = append(templateInfos, map[string]any{"type": "cluster", "templateName": row.Templates.ClusterTemplate})
+	}
+	if row.Templates.GTMTemplate != "" {
+		templateInfos = append(templateInfos, map[string]any{"type": "gtm", "templateName": row.Templates.GTMTemplate})
+	}
+	if row.Templates.LDSTemplate != "" {
+		templateInfos = append(templateInfos, map[string]any{"type": "lds", "templateName": row.Templates.LDSTemplate})
+	}
+	if row.Templates.SystemTemplate != "" {
+		templateInfos = append(templateInfos, map[string]any{"type": "system", "templateName": row.Templates.SystemTemplate})
+	}
+	if row.Templates.DnOSTemplate != "" {
+		templateInfos = append(templateInfos, map[string]any{"type": "dn_OS", "templateName": row.Templates.DnOSTemplate})
+	}
+
 	return map[string]any{
 		"configMode": 1,
 		"clusterInstallInfo": map[string]any{
@@ -332,13 +526,9 @@ func buildPayload(row normalizedRow, args runArgs, passwordB64 string) map[strin
 			"gtmUseMode":   args.GTMUseMode,
 			"haMode":       args.HAMode,
 		},
-		"dnInstallList": buildDNInstallList(row, args),
-		"cnInstallList": buildCNInstallList(row, args),
-		"parameterTemplateInfos": []map[string]any{
-			{"type": "DN", "templateName": row.Templates.DNTemplate},
-			{"type": "CN", "templateName": row.Templates.CNTemplate},
-			{"type": "GLOBAL", "templateName": row.Templates.GlobalTemplate},
-		},
+		"dnInstallList":          buildDNInstallList(row, args),
+		"cnInstallList":          buildCNInstallList(row, args),
+		"parameterTemplateInfos": templateInfos,
 	}
 }
 
@@ -453,7 +643,7 @@ func startCreateCluster(ctx context.Context, client *insightopen.Client, payload
 	}
 	if toInt(resp["code"]) != 1 {
 		data, _ := json.Marshal(resp)
-		return "", fmt.Errorf(string(data))
+		return "", fmt.Errorf("%s", string(data))
 	}
 	data, ok := resp["data"].(map[string]any)
 	if ok {
@@ -479,7 +669,7 @@ func pollCreateClusterProgress(ctx context.Context, client *insightopen.Client, 
 			return nil, err
 		}
 		if resp.Code != 1 {
-			return nil, fmt.Errorf(firstNonEmpty(resp.Msg))
+			return nil, fmt.Errorf("%s", firstNonEmpty(resp.Msg))
 		}
 
 		data, err := insightopen.DecodeData[map[string]any](resp)
@@ -510,15 +700,51 @@ func pollCreateClusterProgress(ctx context.Context, client *insightopen.Client, 
 }
 
 func buildTemplateSelectionOutput(row normalizedRow) map[string]any {
-	return map[string]any{
+	out := map[string]any{
 		"server_type":     row.Templates.ServerType,
 		"global_template": row.Templates.GlobalTemplate,
 		"dn_template":     row.Templates.DNTemplate,
 		"cn_template":     row.Templates.CNTemplate,
 	}
+	if row.Templates.ClusterTemplate != "" {
+		out["cluster_template"] = row.Templates.ClusterTemplate
+	}
+	if row.Templates.GTMTemplate != "" {
+		out["gtm_template"] = row.Templates.GTMTemplate
+	}
+	if row.Templates.LDSTemplate != "" {
+		out["lds_template"] = row.Templates.LDSTemplate
+	}
+	if row.Templates.SystemTemplate != "" {
+		out["system_template"] = row.Templates.SystemTemplate
+	}
+	if row.Templates.DnOSTemplate != "" {
+		out["dn_os_template"] = row.Templates.DnOSTemplate
+	}
+	return out
 }
 
 func logTemplateSelection(rows []normalizedRow) {
+	// Summary table
+	w := tabwriter.NewWriter(os.Stderr, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "集群\tserver_type\t来源\tDN 模版\tCN 模版\tGLOBAL 模版")
+	for _, row := range rows {
+		source := "自动"
+		if row.CSVServerType != "" {
+			source = "CSV"
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
+			row.ClusterName,
+			row.Templates.ServerType,
+			source,
+			row.Templates.DNTemplate,
+			row.Templates.CNTemplate,
+			row.Templates.GlobalTemplate,
+		)
+	}
+	w.Flush()
+
+	// Also log JSON for machine parsing
 	for _, row := range rows {
 		text, _ := json.Marshal(buildTemplateSelectionOutput(row))
 		log.Printf("cluster=%s template_selection=%s", row.ClusterName, string(text))
@@ -595,4 +821,14 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+// sortedKeys returns sorted keys of a map[string]T.
+func sortedKeys(m map[string][]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }

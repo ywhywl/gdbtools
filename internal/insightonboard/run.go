@@ -11,11 +11,19 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ywhywl/gdbtools/internal/hostchecker"
 	"github.com/ywhywl/gdbtools/internal/insightinput"
 	"github.com/ywhywl/gdbtools/internal/insightopen"
 )
 
 const defaultSSHPasswordB64 = "c2VjcmV0"
+
+type apiErrorData struct {
+	ErrorCode any      `json:"errorCode"`
+	ErrorMsg  string   `json:"errorMsg"`
+	FailedIP  []string `json:"failedIp"`
+	TaskID    any      `json:"taskId"`
+}
 
 type hostTaskResponse struct {
 	Result        string   `json:"result"`
@@ -43,6 +51,9 @@ func Run(args []string) (int, error) {
 	var pollTimeout int
 	var verifySSL bool
 	var outputJSON bool
+	var debug bool
+	var skipCheck bool
+	var checkTimeout int
 	var authFlags insightopen.AuthFlags
 
 	fs.StringVar(&api, "api", "", "Insight API 地址")
@@ -57,6 +68,9 @@ func Run(args []string) (int, error) {
 	fs.IntVar(&pollTimeout, "poll-timeout", 3600, "轮询超时(秒)")
 	fs.BoolVar(&verifySSL, "verify-ssl", false, "启用 SSL 证书校验")
 	fs.BoolVar(&outputJSON, "output-json", false, "以 JSON 格式输出结果")
+	fs.BoolVar(&debug, "debug", false, "打印请求和响应的 debug 日志")
+	fs.BoolVar(&skipCheck, "skip-check", false, "跳过主机前置检查")
+	fs.IntVar(&checkTimeout, "check-timeout", 15, "单台主机检查超时(秒)")
 	insightopen.AddAuthFlags(fs, &authFlags)
 
 	if err := fs.Parse(args); err != nil {
@@ -74,6 +88,8 @@ func Run(args []string) (int, error) {
 	if batchSize < 1 || batchSize > 10 {
 		return 1, fmt.Errorf("--batch-size 必须在 1 到 10 之间")
 	}
+
+	insightopen.SetDebug(debug)
 
 	hosts, err := insightinput.ParseTabularInput(input)
 	if err != nil {
@@ -93,6 +109,57 @@ func Run(args []string) (int, error) {
 		return 2, err
 	}
 	log.Printf("待纳管主机: %d 台 (Insight: %s)", len(hosts), client.BaseURL())
+
+	// --- Pre-check hosts ---
+	var checkResults []hostchecker.CheckResult
+	if skipCheck {
+		log.Printf("跳过前置检查 (--skip-check)")
+	} else {
+		resolvedB64 := resolveSSHPasswordB64(sshPassword, sshPasswordB64)
+		log.Printf("开始前置检查，超时 %ds/台", checkTimeout)
+		checkResults = hostchecker.CheckAll(hosts, sshPort, sshUser, resolvedB64, time.Duration(checkTimeout)*time.Second)
+
+		passed := 0
+		failed := 0
+		for _, r := range checkResults {
+			if r.Passed {
+				passed++
+			} else {
+				failed++
+			}
+		}
+		log.Printf("前置检查完成: 通过 %d, 未通过 %d", passed, failed)
+
+		// Filter: keep only passed hosts
+		passedIPs := map[string]bool{}
+		for _, r := range checkResults {
+			if r.Passed {
+				passedIPs[r.IP] = true
+			}
+		}
+		filtered := make([]map[string]string, 0, passed)
+		for _, host := range hosts {
+			if passedIPs[strings.TrimSpace(host["server_ip"])] {
+				filtered = append(filtered, host)
+			}
+		}
+		hosts = filtered
+		log.Printf("进入纳管的主机: %d 台", len(hosts))
+
+		if len(hosts) == 0 {
+			if outputJSON {
+				output, _ := json.MarshalIndent(map[string]any{
+					"total":         len(checkResults),
+					"success_count": 0,
+					"failed_count":  0,
+					"precheck":      buildPrecheckOutput(checkResults),
+					"results":       []map[string]string{},
+				}, "", "  ")
+				fmt.Println(string(output))
+			}
+			return 1, fmt.Errorf("所有主机均未通过前置检查")
+		}
+	}
 
 	ipStatus, runErr := onboardHosts(
 		context.Background(),
@@ -126,12 +193,16 @@ func Run(args []string) (int, error) {
 	failedCount := len(ipStatus) - successCount
 
 	if outputJSON {
-		output, err := json.MarshalIndent(map[string]any{
+		out := map[string]any{
 			"total":         len(ipStatus),
 			"success_count": successCount,
 			"failed_count":  failedCount,
 			"results":       results,
-		}, "", "  ")
+		}
+		if len(checkResults) > 0 {
+			out["precheck"] = buildPrecheckOutput(checkResults)
+		}
+		output, err := json.MarshalIndent(out, "", "  ")
 		if err != nil {
 			return 2, err
 		}
@@ -209,8 +280,28 @@ func processBatch(
 	if err := client.PostJSON(ctx, path, payload, &resp); err != nil {
 		return err
 	}
-	if toInt(resp["code"]) != 1 {
-		return fmt.Errorf("纳管接口返回 code=%v: %v", resp["code"], resp["msg"])
+	code := toInt(resp["code"])
+	if code != 1 {
+		msg := fmt.Sprintf("纳管接口返回 code=%v", resp["code"])
+		if data, ok := resp["data"].(map[string]any); ok {
+			ed := apiErrorData{
+				ErrorCode: data["errorCode"],
+				ErrorMsg:  strings.TrimSpace(fmt.Sprint(data["errorMsg"])),
+				FailedIP:  extractStringSlice(data["failedIp"]),
+			}
+			if ed.ErrorMsg != "" {
+				msg += fmt.Sprintf(", errorMsg=%s", ed.ErrorMsg)
+			}
+			if ed.ErrorCode != nil && fmt.Sprint(ed.ErrorCode) != "0" && fmt.Sprint(ed.ErrorCode) != "<nil>" {
+				msg += fmt.Sprintf(", errorCode=%v", ed.ErrorCode)
+			}
+			if len(ed.FailedIP) > 0 {
+				msg += fmt.Sprintf(", failedIp=[%s]", strings.Join(ed.FailedIP, ", "))
+			}
+		} else if m := strings.TrimSpace(fmt.Sprint(resp["msg"])); m != "" && m != "<nil>" {
+			msg += fmt.Sprintf(": %s", m)
+		}
+		return fmt.Errorf("%s", msg)
 	}
 
 	taskID := taskIDFromResponse(resp)
@@ -371,6 +462,23 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
+func extractStringSlice(v any) []string {
+	switch typed := v.(type) {
+	case []string:
+		return typed
+	case []any:
+		out := make([]string, 0, len(typed))
+		for _, item := range typed {
+			if s := strings.TrimSpace(fmt.Sprint(item)); s != "" {
+				out = append(out, s)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
 func toInt(value any) int {
 	switch typed := value.(type) {
 	case int:
@@ -382,4 +490,30 @@ func toInt(value any) int {
 		fmt.Sscanf(fmt.Sprint(value), "%d", &out)
 		return out
 	}
+}
+
+func buildPrecheckOutput(results []hostchecker.CheckResult) []map[string]any {
+	out := make([]map[string]any, 0, len(results))
+	for _, r := range results {
+		item := map[string]any{
+			"ip":     r.IP,
+			"passed": r.Passed,
+		}
+		if r.SysInfo != nil {
+			virtType := "virtual"
+			if r.SysInfo.Virt == "none" {
+				virtType = "physical"
+			}
+			item["os"] = r.SysInfo.OS
+			item["arch"] = r.SysInfo.CPUArch
+			item["type"] = virtType
+			item["cpu"] = r.SysInfo.CPU
+			item["mem_gb"] = r.SysInfo.MemGB
+		}
+		if !r.Passed {
+			item["reasons"] = r.Reasons
+		}
+		out = append(out, item)
+	}
+	return out
 }

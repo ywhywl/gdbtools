@@ -7,12 +7,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 )
+
+var requestDebug bool
+
+func SetDebug(on bool) { requestDebug = on }
 
 var requestHeaders = map[string]string{
 	"Content-Type": "application/json",
@@ -103,6 +108,14 @@ func (c *Client) doJSON(ctx context.Context, method, requestURL string, payload 
 		req.Header.Set("password", c.auth.PasswordB64)
 	}
 
+	if requestDebug {
+		if len(payload) > 0 {
+			log.Printf("[debug] %s %s body: %s", method, requestURL, string(payload))
+		} else {
+			log.Printf("[debug] %s %s (no body)", method, requestURL)
+		}
+	}
+
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return err
@@ -115,11 +128,17 @@ func (c *Client) doJSON(ctx context.Context, method, requestURL string, payload 
 	}
 
 	if resp.StatusCode >= 400 {
+		if requestDebug {
+			log.Printf("[debug] response: HTTP %d: %s", resp.StatusCode, string(raw))
+		}
 		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(raw))
 	}
 
 	if out == nil || len(raw) == 0 {
 		return nil
+	}
+	if requestDebug {
+		log.Printf("[debug] response body: %s", string(raw))
 	}
 	if err := json.Unmarshal(raw, out); err != nil {
 		return fmt.Errorf("decode json response failed: %w", err)
