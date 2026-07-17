@@ -13,6 +13,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/ywhywl/gdbtools/internal/hostchecker"
 	"github.com/ywhywl/gdbtools/internal/insightinput"
 	"github.com/ywhywl/gdbtools/internal/insightopen"
 )
@@ -80,6 +81,7 @@ type runArgs struct {
 	// Template auto-selection
 	AutoSelect     bool
 	SSHUser        string
+	SSHKey         string
 	SSHPassword    string
 	SSHPasswordB64 string
 	SSHPort        int
@@ -230,7 +232,8 @@ func parseArgs(args []string) (runArgs, error) {
 	// Template auto-selection flags
 	fs.BoolVar(&parsed.AutoSelect, "auto-select-template", true, "通过 SSH 检测内存自动选择模版（默认开启）")
 	fs.StringVar(&parsed.SSHUser, "ssh-user", "", "SSH 用户名（自动选择模版时需要）")
-	fs.StringVar(&parsed.SSHPassword, "ssh-password", "", "SSH 密码明文")
+	fs.StringVar(&parsed.SSHKey, "ssh-key", "", "SSH 私钥路径（不指定则自动查找 ~/.ssh/id_*）")
+	fs.StringVar(&parsed.SSHPassword, "ssh-password", "", "SSH 密码明文（key 认证失败时的兜底）")
 	fs.StringVar(&parsed.SSHPasswordB64, "ssh-password-b64", "", "SSH 密码 base64")
 	fs.IntVar(&parsed.SSHPort, "ssh-port", 22, "SSH 端口")
 	fs.IntVar(&parsed.SSHTimeout, "ssh-timeout", 15, "单台 SSH 超时秒数")
@@ -259,9 +262,6 @@ func parseArgs(args []string) (runArgs, error) {
 		if strings.TrimSpace(parsed.SSHUser) == "" {
 			return parsed, fmt.Errorf("开启 --auto-select-template 时，--ssh-user 为必填项")
 		}
-		if strings.TrimSpace(parsed.SSHPassword) == "" && strings.TrimSpace(parsed.SSHPasswordB64) == "" {
-			return parsed, fmt.Errorf("开启 --auto-select-template 时，必须提供 --ssh-password 或 --ssh-password-b64")
-		}
 	}
 	if parsed.IgnoreMismatch && parsed.SkipCheck {
 		return parsed, fmt.Errorf("--ignore-template-mismatch 和 --skip-template-check 不能同时指定")
@@ -275,17 +275,6 @@ func resolvePasswordB64(password, passwordB64 string) (string, error) {
 	}
 	if password == "" {
 		return "", fmt.Errorf("必须提供 --ins-user-pwd 或 --ins-user-pwd-base64")
-	}
-	return base64.StdEncoding.EncodeToString([]byte(password)), nil
-}
-
-// resolveSSHPasswordB64 returns the SSH password in base64 form.
-func resolveSSHPasswordB64(password, passwordB64 string) (string, error) {
-	if strings.TrimSpace(passwordB64) != "" {
-		return strings.TrimSpace(passwordB64), nil
-	}
-	if password == "" {
-		return "", fmt.Errorf("必须提供 --ssh-password 或 --ssh-password-b64")
 	}
 	return base64.StdEncoding.EncodeToString([]byte(password)), nil
 }
@@ -378,9 +367,17 @@ func loadRows(path string, autoSelect bool) ([]normalizedRow, error) {
 // applyAutoSelect performs SSH-based template detection for each cluster,
 // validates against CSV values, and updates rows accordingly.
 func applyAutoSelect(rows []normalizedRow, args runArgs) ([]normalizedRow, error) {
-	sshPasswordB64, err := resolveSSHPasswordB64(args.SSHPassword, args.SSHPasswordB64)
+	sshAuth, err := hostchecker.NewSSHAuth(args.SSHKey, args.SSHPassword, args.SSHPasswordB64)
 	if err != nil {
 		return nil, err
+	}
+	if !sshAuth.HasAuth() {
+		return nil, fmt.Errorf("模版自动选择需要 SSH 认证: 请配置 SSH key、SSH agent 或提供 --ssh-password")
+	}
+	if sshAuth.KeyPath != "" {
+		log.Printf("[模版检测] SSH 认证: key=%s", sshAuth.KeyPath)
+	} else if sshAuth.AgentSock != "" {
+		log.Printf("[模版检测] SSH 认证: agent=%s", sshAuth.AgentSock)
 	}
 
 	// Collect unique IPs per cluster (only non-empty IPs).
@@ -407,7 +404,7 @@ func applyAutoSelect(rows []normalizedRow, args runArgs) ([]normalizedRow, error
 			return nil, fmt.Errorf("集群 %s 无任何有效 IP 地址", name)
 		}
 		log.Printf("[模版检测] 集群 %s: 正在通过 SSH 检测 %d 台主机...", name, len(ips))
-		st, err := resolveClusterServerType(ips, args.SSHPort, args.SSHUser, sshPasswordB64, sshTimeout, args.AllowLowMemVM)
+		st, err := resolveClusterServerType(ips, args.SSHPort, args.SSHUser, sshAuth, sshTimeout, args.AllowLowMemVM)
 		if err != nil {
 			return nil, fmt.Errorf("集群 %s 模版检测失败: %w", name, err)
 		}

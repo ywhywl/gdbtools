@@ -16,8 +16,6 @@ import (
 	"github.com/ywhywl/gdbtools/internal/insightopen"
 )
 
-const defaultSSHPasswordB64 = "c2VjcmV0"
-
 type apiErrorData struct {
 	ErrorCode any      `json:"errorCode"`
 	ErrorMsg  string   `json:"errorMsg"`
@@ -43,6 +41,7 @@ func Run(args []string) (int, error) {
 	var input string
 	var sshPort int
 	var sshUser string
+	var sshKey string
 	var sshPassword string
 	var sshPasswordB64 string
 	var coverInstall int
@@ -60,8 +59,9 @@ func Run(args []string) (int, error) {
 	fs.StringVar(&input, "input", "", "输入文件路径 (CSV 或 JSON)")
 	fs.IntVar(&sshPort, "ssh-port", 22, "SSH 端口")
 	fs.StringVar(&sshUser, "ssh-user", "", "SSH 用户名")
-	fs.StringVar(&sshPassword, "ssh-password", "", "SSH 密码明文")
-	fs.StringVar(&sshPasswordB64, "ssh-password-b64", defaultSSHPasswordB64, "SSH 密码的 base64 串")
+	fs.StringVar(&sshKey, "ssh-key", "", "SSH 私钥路径 (不指定则自动查找 ~/.ssh/id_*)")
+	fs.StringVar(&sshPassword, "ssh-password", "", "SSH 密码明文 (key 认证失败时的兜底)")
+	fs.StringVar(&sshPasswordB64, "ssh-password-b64", "", "SSH 密码 base64 串")
 	fs.IntVar(&coverInstall, "cover-install", 0, "是否覆盖安装: 0=否,1=是")
 	fs.IntVar(&batchSize, "batch-size", 10, "每批纳管主机数")
 	fs.IntVar(&pollInterval, "poll-interval", 10, "轮询间隔(秒)")
@@ -110,12 +110,39 @@ func Run(args []string) (int, error) {
 	}
 	log.Printf("待纳管主机: %d 台 (Insight: %s)", len(hosts), client.BaseURL())
 
+	// --- Resolve SSH auth for pre-check ---
+	sshAuth, err := hostchecker.NewSSHAuth(sshKey, sshPassword, sshPasswordB64)
+	if err != nil {
+		return 2, err
+	}
+	if !sshAuth.HasAuth() && strings.TrimSpace(sshUser) != "" {
+		log.Printf("警告: 未找到 SSH 认证方式 (无 key/agent/密码)，前置检查将跳过所有主机")
+	}
+	if sshAuth.KeyPath != "" {
+		log.Printf("SSH 认证: key=%s", sshAuth.KeyPath)
+	} else if sshAuth.AgentSock != "" {
+		log.Printf("SSH 认证: agent=%s", sshAuth.AgentSock)
+	} else if sshAuth.Password != "" {
+		log.Printf("SSH 认证: password")
+	}
+
+	// Resolve password for Insight API payload (superPwd field).
+	// This is the password Insight backend uses to SSH into hosts — separate from CLI's SSH auth.
+	apiPasswordB64 := ""
+	if strings.TrimSpace(sshPasswordB64) != "" {
+		apiPasswordB64 = strings.TrimSpace(sshPasswordB64)
+	} else if strings.TrimSpace(sshPassword) != "" {
+		apiPasswordB64 = base64.StdEncoding.EncodeToString([]byte(sshPassword))
+	}
+	if apiPasswordB64 == "" {
+		return 2, fmt.Errorf("纳管接口需要 SSH 密码供 Insight 后端登录目标主机，请提供 --ssh-password 或 --ssh-password-b64")
+	}
+
 	// --- Pre-check hosts ---
 	var checkResults []hostchecker.CheckResult
 	if skipCheck {
 		log.Printf("跳过前置检查 (--skip-check)，自动检测 /data 挂载以确定路径")
-		resolvedB64 := resolveSSHPasswordB64(sshPassword, sshPasswordB64)
-		checkResults = hostchecker.ResolvePaths(hosts, sshPort, sshUser, resolvedB64, time.Duration(checkTimeout)*time.Second)
+		checkResults = hostchecker.ResolvePaths(hosts, sshPort, sshUser, sshAuth, time.Duration(checkTimeout)*time.Second)
 		for i, host := range hosts {
 			ip := strings.TrimSpace(host["server_ip"])
 			if i < len(checkResults) && checkResults[i].IP == ip {
@@ -124,9 +151,11 @@ func Run(args []string) (int, error) {
 			}
 		}
 	} else {
-		resolvedB64 := resolveSSHPasswordB64(sshPassword, sshPasswordB64)
+		if !sshAuth.HasAuth() {
+			return 2, fmt.Errorf("前置检查需要 SSH 认证: 请配置 SSH key、SSH agent 或提供 --ssh-password")
+		}
 		log.Printf("开始前置检查，超时 %ds/台", checkTimeout)
-		checkResults = hostchecker.CheckAll(hosts, sshPort, sshUser, resolvedB64, time.Duration(checkTimeout)*time.Second)
+		checkResults = hostchecker.CheckAll(hosts, sshPort, sshUser, sshAuth, time.Duration(checkTimeout)*time.Second)
 
 		passed := 0
 		failed := 0
@@ -179,8 +208,7 @@ func Run(args []string) (int, error) {
 		hosts,
 		sshPort,
 		sshUser,
-		sshPassword,
-		sshPasswordB64,
+		apiPasswordB64,
 		coverInstall,
 		batchSize,
 		time.Duration(pollInterval)*time.Second,
@@ -242,14 +270,12 @@ func onboardHosts(
 	hosts []map[string]string,
 	sshPort int,
 	sshUser string,
-	sshPassword string,
 	sshPasswordB64 string,
 	coverInstall int,
 	batchSize int,
 	pollInterval time.Duration,
 	pollTimeout time.Duration,
 ) (map[string]string, error) {
-	resolvedPasswordB64 := resolveSSHPasswordB64(sshPassword, sshPasswordB64)
 	batches, err := chunkHosts(hosts, batchSize)
 	if err != nil {
 		return nil, err
@@ -263,7 +289,7 @@ func onboardHosts(
 		}
 		log.Printf("开始第 %d/%d 批纳管，本批 %d 台: %s", i+1, len(batches), len(batch), strings.Join(ips, ", "))
 
-		if err := processBatch(ctx, client, batch, sshPort, sshUser, resolvedPasswordB64, coverInstall, pollInterval, pollTimeout, status); err != nil {
+		if err := processBatch(ctx, client, batch, sshPort, sshUser, sshPasswordB64, coverInstall, pollInterval, pollTimeout, status); err != nil {
 			log.Printf("第 %d/%d 批纳管失败: %s", i+1, len(batches), err)
 			for _, host := range batch {
 				status[strings.TrimSpace(host["server_ip"])] = "failed"
@@ -439,17 +465,6 @@ func chunkHosts(hosts []map[string]string, batchSize int) ([][]map[string]string
 		out = append(out, hosts[i:end])
 	}
 	return out, nil
-}
-
-func resolveSSHPasswordB64(sshPassword, sshPasswordB64 string) string {
-	if strings.TrimSpace(sshPasswordB64) != "" {
-		return strings.TrimSpace(sshPasswordB64)
-	}
-	if sshPassword != "" {
-		return base64.StdEncoding.EncodeToString([]byte(sshPassword))
-	}
-	log.Printf("未显式提供 SSH 密码，使用默认 base64 测试密码串")
-	return defaultSSHPasswordB64
 }
 
 func taskIDFromResponse(resp map[string]any) string {

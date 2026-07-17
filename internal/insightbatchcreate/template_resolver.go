@@ -2,13 +2,11 @@ package insightbatchcreate
 
 import (
 	"fmt"
-	"io"
+	"log"
 	"strings"
 	"time"
 
-	"encoding/base64"
-
-	"golang.org/x/crypto/ssh"
+	"github.com/ywhywl/gdbtools/internal/hostchecker"
 )
 
 // hostSysInfo holds system info collected from a single host via SSH.
@@ -41,50 +39,26 @@ func memToServerType(memGB int, virt string, allowLowMemVM bool) (string, error)
 }
 
 // detectHostSysInfo connects to a host via SSH and collects memory + virtualization info.
-func detectHostSysInfo(ip string, port int, user, passwordB64 string, timeout time.Duration) (hostSysInfo, error) {
+func detectHostSysInfo(ip string, port int, user string, auth *hostchecker.SSHAuth, timeout time.Duration) (hostSysInfo, error) {
 	info := hostSysInfo{IP: ip}
 
-	password, err := decodeB64(passwordB64)
+	c, err := hostchecker.NewClient(ip, port, user, auth, timeout)
 	if err != nil {
-		return info, fmt.Errorf("解码 SSH 密码: %w", err)
+		return info, fmt.Errorf("SSH 连接 %s 失败: %w", ip, err)
 	}
-
-	config := &ssh.ClientConfig{
-		User: user,
-		Auth: []ssh.AuthMethod{
-			ssh.Password(password),
-		},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(), //nolint:gosec
-		Timeout:         timeout,
-	}
-
-	addr := fmt.Sprintf("%s:%d", ip, port)
-	conn, err := ssh.Dial("tcp", addr, config)
-	if err != nil {
-		return info, fmt.Errorf("SSH 连接 %s 失败: %w", addr, err)
-	}
-	defer conn.Close()
+	defer c.Close()
 
 	// Memory (total, GB)
-	out, err := runSSHCmd(conn, "free -g | awk '/^Mem:/{print $2}'")
+	out, err := c.Run("free -g | awk '/^Mem:/{print $2}'")
 	if err != nil {
 		return info, fmt.Errorf("查询内存失败 %s: %w", ip, err)
 	}
 	info.MemGB = parseInt(out)
 
 	// Virtualization
-	virtOut, err := runSSHCmd(conn, "systemd-detect-virt --vm")
-	if err != nil {
-		// Fallback: check DMI product name
-		virtOut, err = runSSHCmd(conn, "dmidecode -s system-product-name 2>/dev/null")
-		if err != nil || strings.TrimSpace(virtOut) == "" {
-			info.Virt = "unknown"
-		} else {
-			info.Virt = strings.TrimSpace(strings.ToLower(virtOut))
-			if info.Virt == "none" || info.Virt == "" {
-				info.Virt = "none"
-			}
-		}
+	virtOut, err := c.RunWithFallback("systemd-detect-virt --vm", "dmidecode -s system-product-name 2>/dev/null")
+	if err != nil || strings.TrimSpace(virtOut) == "" {
+		info.Virt = "unknown"
 	} else {
 		virt := strings.TrimSpace(strings.ToLower(virtOut))
 		if virt == "none" || virt == "" {
@@ -99,14 +73,15 @@ func detectHostSysInfo(ip string, port int, user, passwordB64 string, timeout ti
 
 // resolveClusterServerType SSH-detects server_type for a cluster.
 // All IPs must succeed SSH and yield the same server_type, otherwise returns an error.
-func resolveClusterServerType(ips []string, port int, user, passwordB64 string, timeout time.Duration, allowLowMemVM bool) (string, error) {
+func resolveClusterServerType(ips []string, port int, user string, auth *hostchecker.SSHAuth, timeout time.Duration, allowLowMemVM bool) (string, error) {
 	if len(ips) == 0 {
 		return "", fmt.Errorf("集群无有效 IP 地址")
 	}
 
 	var detectedType string
 	for _, ip := range ips {
-		info, err := detectHostSysInfo(ip, port, user, passwordB64, timeout)
+		log.Printf("[模版检测] 正在检测 %s...", ip)
+		info, err := detectHostSysInfo(ip, port, user, auth, timeout)
 		if err != nil {
 			return "", err
 		}
@@ -125,51 +100,6 @@ func resolveClusterServerType(ips []string, port int, user, passwordB64 string, 
 	}
 
 	return detectedType, nil
-}
-
-func runSSHCmd(conn *ssh.Client, cmd string) (string, error) {
-	sess, err := conn.NewSession()
-	if err != nil {
-		return "", fmt.Errorf("create session failed: %w", err)
-	}
-	defer sess.Close()
-
-	out, err := sess.StdoutPipe()
-	if err != nil {
-		return "", fmt.Errorf("stdout pipe failed: %w", err)
-	}
-
-	if err := sess.Start(cmd); err != nil {
-		return "", fmt.Errorf("start command failed: %w", err)
-	}
-
-	done := make(chan struct{})
-	go func() {
-		sess.Wait()
-		close(done)
-	}()
-
-	select {
-	case <-done:
-		// finished
-	case <-time.After(15 * time.Second):
-		sess.Close()
-		return "", fmt.Errorf("command timed out: %s", cmd)
-	}
-
-	data, err := io.ReadAll(out)
-	if err != nil {
-		return "", fmt.Errorf("read stdout failed: %w", err)
-	}
-	return strings.TrimSpace(string(data)), nil
-}
-
-func decodeB64(s string) (string, error) {
-	b, err := base64.StdEncoding.DecodeString(s)
-	if err != nil {
-		return s, nil // not base64 → treat as plain text
-	}
-	return string(b), nil
 }
 
 func parseInt(s string) int {

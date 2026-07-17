@@ -178,7 +178,8 @@ DN `teamId` 映射：
 | --- | --- | --- |
 | `--auto-select-template` | 通过 SSH 检测内存自动选择模版 | `true`（默认开启） |
 | `--ssh-user` | SSH 用户名（开启自动选择时必填） | - |
-| `--ssh-password` | SSH 密码明文 | - |
+| `--ssh-key` | SSH 私钥路径，不指定则自动查找 `~/.ssh/id_*` | - |
+| `--ssh-password` | SSH 密码明文（key 认证失败时的兜底） | - |
 | `--ssh-password-b64` | SSH 密码 base64 | - |
 | `--ssh-port` | SSH 端口 | `22` |
 | `--ssh-timeout` | 单台 SSH 超时秒数 | `15` |

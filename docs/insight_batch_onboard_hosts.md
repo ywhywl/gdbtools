@@ -60,8 +60,9 @@ JSON 示例：
 | `--input` | 输入文件路径，必填 |
 | `--ssh-port` | SSH 端口，默认 `22` |
 | `--ssh-user` | SSH 用户名，必填 |
-| `--ssh-password` | SSH 密码明文 |
-| `--ssh-password-b64` | SSH 密码 base64，默认 `c2VjcmV0` |
+| `--ssh-key` | SSH 私钥路径，不指定则自动查找 `~/.ssh/id_ed25519` → `id_rsa` → `id_ecdsa` → `id_dsa` |
+| `--ssh-password` | SSH 密码明文（key 认证失败时的兜底） |
+| `--ssh-password-b64` | SSH 密码 base64 |
 | `--cover-install` | 是否覆盖安装，`0` 或 `1`，默认 `0` |
 | `--batch-size` | 每批纳管主机数，范围 `1-10`，默认 `10` |
 | `--poll-interval` | 轮询间隔秒数，默认 `10` |
@@ -75,7 +76,7 @@ JSON 示例：
 注意：
 
 - 必须提供 Insight 鉴权参数，鉴权头为 `username/password`
-- 如果未显式提供 `--ssh-password` 且未修改 `--ssh-password-b64`，命令会使用默认测试值 `c2VjcmV0`
+- SSH 认证优先级：SSH Agent > 私钥文件 > 密码，有 key 时不需要提供密码参数
 
 ## 前置检查
 

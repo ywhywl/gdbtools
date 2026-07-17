@@ -9,7 +9,7 @@ import (
 )
 
 // CheckAll checks all hosts via SSH and returns results.
-func CheckAll(hosts []map[string]string, sshPort int, sshUser, sshPasswordB64 string, timeout time.Duration) []CheckResult {
+func CheckAll(hosts []map[string]string, sshPort int, sshUser string, auth *SSHAuth, timeout time.Duration) []CheckResult {
 	results := make([]CheckResult, 0, len(hosts))
 	for _, host := range hosts {
 		ip := strings.TrimSpace(host["server_ip"])
@@ -18,7 +18,7 @@ func CheckAll(hosts []map[string]string, sshPort int, sshUser, sshPasswordB64 st
 		}
 		log.Printf("[check] 检查主机: %s", ip)
 
-		result, err := checkHost(ip, sshPort, sshUser, sshPasswordB64, timeout)
+		result, err := checkHost(ip, sshPort, sshUser, auth, timeout)
 		if err != nil {
 			result = CheckResult{
 				IP:      ip,
@@ -36,12 +36,17 @@ func CheckAll(hosts []map[string]string, sshPort int, sshUser, sshPasswordB64 st
 		log.Printf("[check] %s %s: os=%s arch=%s virt=%s cpu=%d mem=%dG data_mount=%v data_avail=%dG",
 			status, ip, result.SysInfo.OS, result.SysInfo.CPUArch, result.SysInfo.Virt,
 			result.SysInfo.CPU, result.SysInfo.MemGB, result.SysInfo.HasData, result.SysInfo.DataAvailGB)
+		if !result.Passed && len(result.Reasons) > 0 {
+			for _, reason := range result.Reasons {
+				log.Printf("[check]   原因: %s", reason)
+			}
+		}
 	}
 	return results
 }
 
-func checkHost(ip string, sshPort int, sshUser, sshPasswordB64 string, timeout time.Duration) (CheckResult, error) {
-	c, err := NewClient(ip, sshPort, sshUser, sshPasswordB64, timeout)
+func checkHost(ip string, sshPort int, sshUser string, auth *SSHAuth, timeout time.Duration) (CheckResult, error) {
+	c, err := NewClient(ip, sshPort, sshUser, auth, timeout)
 	if err != nil {
 		return CheckResult{IP: ip, SysInfo: &SysInfo{IP: ip}}, err
 	}
@@ -207,7 +212,7 @@ func resolvePaths(hasData bool, virt string) (dataPath, installPath string) {
 
 // ResolvePaths performs a lightweight SSH mount check for hosts when --skip-check is used.
 // It only checks /data mount status and sets resolved paths; hosts that fail SSH get "/" defaults.
-func ResolvePaths(hosts []map[string]string, sshPort int, sshUser, sshPasswordB64 string, timeout time.Duration) []CheckResult {
+func ResolvePaths(hosts []map[string]string, sshPort int, sshUser string, auth *SSHAuth, timeout time.Duration) []CheckResult {
 	results := make([]CheckResult, 0, len(hosts))
 	for _, host := range hosts {
 		ip := strings.TrimSpace(host["server_ip"])
@@ -216,9 +221,9 @@ func ResolvePaths(hosts []map[string]string, sshPort int, sshUser, sshPasswordB6
 		}
 		cr := CheckResult{IP: ip, ResolvedDataPath: "/", ResolvedInstallPath: "/"}
 
-		c, err := NewClient(ip, sshPort, sshUser, sshPasswordB64, timeout)
+		c, err := NewClient(ip, sshPort, sshUser, auth, timeout)
 		if err != nil {
-			// SSH failed — default to "/"
+			log.Printf("[path-resolve] FAIL %s: SSH 连接失败: %s", ip, err)
 			results = append(results, cr)
 			continue
 		}
@@ -226,7 +231,9 @@ func ResolvePaths(hosts []map[string]string, sshPort int, sshUser, sshPasswordB6
 		_, err = c.Run("df -BG /data")
 		c.Close()
 
-		if err == nil {
+		if err != nil {
+			log.Printf("[path-resolve] WARN %s: df /data 失败: %s, 使用默认路径 /", ip, err)
+		} else {
 			cr.ResolvedDataPath = "/data"
 			cr.ResolvedInstallPath = "/data"
 		}
