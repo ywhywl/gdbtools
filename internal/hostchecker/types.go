@@ -30,9 +30,13 @@ const (
 	PhysMemMin       = 200
 
 	// VM requirements
-	VMCPUMax = 19 // must be < 20
+	VMCPUMax = 30
 	VMMemMin = 24
 	VMMemMax = 48
+
+	// Tolerance for measurement偏差
+	MemToleranceGB  = 4  // free -g 向下取整误差
+	DataToleranceGB = 64 // df -BG 向下取整误差
 
 	// Supported OS IDs
 	OSKylin    = "kylin"

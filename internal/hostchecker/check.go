@@ -165,27 +165,31 @@ func evaluateRules(info SysInfo) []string {
 
 	if info.Virt == "none" {
 		// Physical machine rules
+		physMemThreshold := PhysMemMin - MemToleranceGB
 		if !info.HasData {
 			reasons = append(reasons, "/data 目录未挂载")
-		} else if info.DataAvailGB < PhysDataAvailMin {
-			reasons = append(reasons, fmt.Sprintf("/data 可用空间不足: %dG < %dG (3T)", info.DataAvailGB, PhysDataAvailMin))
+		} else if info.DataAvailGB < PhysDataAvailMin-DataToleranceGB {
+			reasons = append(reasons, fmt.Sprintf("/data 可用空间不足: %dG < %dG (%dG - %dG 容差)",
+				info.DataAvailGB, PhysDataAvailMin-DataToleranceGB, PhysDataAvailMin, DataToleranceGB))
 		}
 		if info.CPU < PhysCPUMin {
 			reasons = append(reasons, fmt.Sprintf("CPU 核心数不足: %d < %d", info.CPU, PhysCPUMin))
 		}
-		if info.MemGB < PhysMemMin {
-			reasons = append(reasons, fmt.Sprintf("内存不足: %dG < %dG", info.MemGB, PhysMemMin))
+		if info.MemGB < physMemThreshold {
+			reasons = append(reasons, fmt.Sprintf("内存不足: %dG < %dG (%dG - %dG 容差)",
+				info.MemGB, physMemThreshold, PhysMemMin, MemToleranceGB))
 		}
 	} else {
 		// VM rules
+		vmMemUpper := VMMemMax + MemToleranceGB
 		if info.HasData {
 			reasons = append(reasons, "虚拟机不应挂载 /data 目录")
 		}
 		if info.CPU > VMCPUMax {
 			reasons = append(reasons, fmt.Sprintf("VM CPU 核心数过多: %d > %d", info.CPU, VMCPUMax))
 		}
-		if info.MemGB < VMMemMin || info.MemGB > VMMemMax {
-			reasons = append(reasons, fmt.Sprintf("VM 内存不在 %dG~%dG 范围内: %dG", VMMemMin, VMMemMax, info.MemGB))
+		if info.MemGB < VMMemMin || info.MemGB > vmMemUpper {
+			reasons = append(reasons, fmt.Sprintf("VM 内存不在 %dG~%dG 范围内: %dG", VMMemMin, vmMemUpper, info.MemGB))
 		}
 	}
 
