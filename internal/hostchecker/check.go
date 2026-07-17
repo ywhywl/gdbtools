@@ -122,18 +122,8 @@ func collectSysInfo(c *Client, ip string) (SysInfo, error) {
 	}
 	info.OS = normalizeOS(osID)
 
-	// 6. Virtualization detection
-	virtOut, err := c.RunWithFallback("systemd-detect-virt --vm", "dmidecode -s system-product-name")
-	if err != nil {
-		info.Virt = "unknown"
-	} else {
-		virt := strings.TrimSpace(strings.ToLower(virtOut))
-		if virt == "none" || virt == "" {
-			info.Virt = "none"
-		} else {
-			info.Virt = virt
-		}
-	}
+	// 6. Virtualization detection (DMI + CPU hypervisor flag)
+	info.Virt = c.DetectVirt()
 
 	return info, nil
 }

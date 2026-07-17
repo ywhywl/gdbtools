@@ -3,7 +3,6 @@ package insightbatchcreate
 import (
 	"fmt"
 	"log"
-	"strings"
 	"time"
 
 	"github.com/ywhywl/gdbtools/internal/hostchecker"
@@ -55,18 +54,8 @@ func detectHostSysInfo(ip string, port int, user string, auth *hostchecker.SSHAu
 	}
 	info.MemGB = parseInt(out)
 
-	// Virtualization
-	virtOut, err := c.RunWithFallback("systemd-detect-virt --vm", "dmidecode -s system-product-name 2>/dev/null")
-	if err != nil || strings.TrimSpace(virtOut) == "" {
-		info.Virt = "unknown"
-	} else {
-		virt := strings.TrimSpace(strings.ToLower(virtOut))
-		if virt == "none" || virt == "" {
-			info.Virt = "none"
-		} else {
-			info.Virt = virt
-		}
-	}
+	// Virtualization (DMI + CPU hypervisor flag)
+	info.Virt = c.DetectVirt()
 
 	return info, nil
 }

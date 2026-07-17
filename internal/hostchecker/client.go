@@ -201,6 +201,72 @@ func (c *Client) Close() error {
 	return nil
 }
 
+// DetectVirt determines virtualization type using DMI + CPU hypervisor flag.
+// Returns "none" for physical machines, or the VM type string (e.g. "kvm", "vmware", "xen").
+// DMI product name is checked first; if it contains known virtualization keywords, returns VM.
+// CPU hypervisor flag (/proc/cpuinfo) is used as secondary confirmation — if DMI is ambiguous
+// but the flag exists, it's a VM. If neither triggers, it's a physical machine.
+func (c *Client) DetectVirt() string {
+	// 1. DMI product name
+	dmiOut, dmiErr := c.Run("cat /sys/class/dmi/id/product_name 2>/dev/null")
+	dmiProduct := strings.TrimSpace(strings.ToLower(dmiOut))
+
+	// 2. CPU hypervisor flag (x86 only, but harmless on aarch64)
+	hasHypervisor := false
+	if out, err := c.Run("grep -qw hypervisor /proc/cpuinfo 2>/dev/null && echo yes || echo no"); err == nil {
+		hasHypervisor = (out == "yes")
+	}
+
+	// DMI-based VM detection keywords
+	vmKeywords := []string{
+		"kvm", "qemu", "vmware", "virtualbox", "xen", "hyper-v",
+		"bochs", "parallels", "virtuozzo", "alc",
+		"openstack", "proxmox", "nutanix",
+	}
+
+	// Clear physical machine indicators (DMI values that confirm PM)
+	pmKeywords := []string{
+		"dell", "hp ", "hpe ", "lenovo", "ibm", "supermicro",
+		"inspur", "huawei", "sugon", "greatwall",
+		"tencent", "alibaba", "amazon", "microsoft",
+	}
+
+	isVMByDMI := false
+	if dmiErr == nil && dmiProduct != "" {
+		for _, kw := range vmKeywords {
+			if strings.Contains(dmiProduct, kw) {
+				isVMByDMI = true
+				break
+			}
+		}
+	}
+
+	// If DMI shows a physical machine brand, it's definitely a PM
+	if dmiErr == nil && dmiProduct != "" {
+		for _, kw := range pmKeywords {
+			if strings.Contains(dmiProduct, kw) {
+				return "none"
+			}
+		}
+	}
+
+	// CPU hypervisor flag is definitive — if present, it's a VM
+	if hasHypervisor {
+		if isVMByDMI {
+			return dmiProduct
+		}
+		return "hypervisor"
+	}
+
+	// DMI detected a VM keyword but no CPU flag — still treat as VM
+	// (aarch64 has no hypervisor flag, or flag not set)
+	if isVMByDMI {
+		return dmiProduct
+	}
+
+	return "none"
+}
+
 // parsePrivateKey tries to parse a PEM-encoded private key.
 // For encrypted keys, it tries the provided password.
 func parsePrivateKey(keyData []byte, password string) (ssh.Signer, error) {
