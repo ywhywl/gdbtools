@@ -222,6 +222,11 @@ func (c *Client) DetectVirt() string {
 		"kvm", "qemu", "vmware", "virtualbox", "xen", "hyper-v",
 		"bochs", "parallels", "virtuozzo", "alc",
 		"openstack", "proxmox", "nutanix",
+		// 国产云厂商虚拟机
+		"cvm",   // 腾讯云 Cloud Virtual Machine
+		"ecs",   // 阿里云 Elastic Compute Service
+		"bcc",   // 百度云 Baidu Cloud Compute
+		"cloud", // 通用云服务器标识
 	}
 
 	// Clear physical machine indicators (DMI values that confirm PM)
