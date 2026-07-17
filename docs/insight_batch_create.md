@@ -68,10 +68,10 @@ num,cluster_name,cluster_group_name,M,S,TS,LS,OS
 | 虚拟化类型 | 内存 MemGB | 选定 server_type |
 |-----------|-----------|-----------------|
 | 物理机 (`Virt == "none"`) | 任意 | `pm` |
-| 虚拟机 | < 24 | **报错退出** |
-| 虚拟机 | >= 24 且 < 32 | `vm_l` |
-| 虚拟机 | >= 32 且 < 48 | `vm_m` |
-| 虚拟机 | >= 48 | `vm_h` |
+| 虚拟机 | < 23 | **报错退出** |
+| 虚拟机 | >= 23 且 < 30 | `vm_l` |
+| 虚拟机 | >= 30 且 < 46 | `vm_m` |
+| 虚拟机 | >= 46 | `vm_h` |
 
 ### 同集群多 IP 处理
 
@@ -186,7 +186,7 @@ DN `teamId` 映射：
 | `--case-sensitive` | 数据库表名大小写敏感，开启后所有模版名附加 `_lowercase_0` | `false` |
 | `--ignore-template-mismatch` | CSV 指定与自动检测不一致时，采用自动检测结果 | `false` |
 | `--skip-template-check` | CSV 指定与自动检测不一致时，采用 CSV 指定值 | `false` |
-| `--allow-low-memory-vm` | 允许虚拟机内存低于 24G 时不报错，降级使用 vm_l | `false` |
+| `--allow-low-memory-vm` | 允许虚拟机内存低于 23G 时不报错，降级使用 vm_l | `false` |
 
 鉴权说明：
 

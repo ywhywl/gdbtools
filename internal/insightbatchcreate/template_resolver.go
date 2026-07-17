@@ -16,22 +16,23 @@ type hostSysInfo struct {
 }
 
 // memToServerType maps memory (GB) and virtualization to server_type.
-// VM:  <24 → error (or vm_l if allowLowMemVM), [24,32) → vm_l, [32,48) → vm_m, >=48 → vm_h
+// Accounts for free -g rounding: a 32G server reports ~31G.
+// VM:  <23 → error (or vm_l if allowLowMemVM), [23,30) → vm_l, [30,46) → vm_m, >=46 → vm_h
 // PM:  always → pm
 func memToServerType(memGB int, virt string, allowLowMemVM bool) (string, error) {
 	if virt == "none" {
 		return "pm", nil
 	}
-	if memGB < 24 {
+	if memGB < 23 {
 		if allowLowMemVM {
 			return "vm_l", nil
 		}
-		return "", fmt.Errorf("虚拟机内存不足: %dG < 24G 最低要求", memGB)
+		return "", fmt.Errorf("虚拟机内存不足: %dG < 23G 最低要求", memGB)
 	}
-	if memGB < 32 {
+	if memGB < 30 {
 		return "vm_l", nil
 	}
-	if memGB < 48 {
+	if memGB < 46 {
 		return "vm_m", nil
 	}
 	return "vm_h", nil
@@ -79,6 +80,8 @@ func resolveClusterServerType(ips []string, port int, user string, auth *hostche
 		if err != nil {
 			return "", fmt.Errorf("%s: %w", ip, err)
 		}
+
+		log.Printf("[模版检测] %s: 内存=%dG 虚拟化=%s → server_type=%s", ip, info.MemGB, info.Virt, st)
 
 		if detectedType == "" {
 			detectedType = st
