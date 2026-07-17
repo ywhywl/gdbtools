@@ -104,7 +104,7 @@ func Run(args []string) (int, error) {
 
 	parsedArgs, err := parseArgs(args)
 	if err != nil {
-		return 3, nil
+		return 3, renderTopLevelError(err)
 	}
 
 	auth, err := insightopen.ResolveAuth(parsedArgs.Auth)
