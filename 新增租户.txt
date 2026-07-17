@@ -1,5 +1,5 @@
 5.1新增租户实例
-5.1.1新增租户实例
+5.i 1.1新增租户实例
 接口说明：配置集群信息后调用接口组建集群
 请求url：/open_api/insight/external/tenant/createCluster
 请求类型：POST
