@@ -14,26 +14,28 @@ type SysInfo struct {
 
 // CheckResult holds the result of checking a single host.
 type CheckResult struct {
-	IP      string
-	Passed  bool
-	Reasons []string // failure reasons (empty if passed)
-	SysInfo *SysInfo
+	IP                  string
+	Passed              bool
+	Reasons             []string // failure reasons (empty if passed)
+	SysInfo             *SysInfo
+	ResolvedDataPath    string // auto-resolved data_path based on mount check
+	ResolvedInstallPath string // auto-resolved install_path based on mount check
 }
 
 // Rule thresholds
 const (
 	// Physical machine requirements
-	PhysDataAvailMin   = 3072 // 3T in GB
-	PhysCPUMin         = 50
-	PhysMemMin         = 200
+	PhysDataAvailMin = 3072 // 3T in GB
+	PhysCPUMin       = 50
+	PhysMemMin       = 200
 
 	// VM requirements
-	VMCPUMax           = 19 // must be < 20
-	VMMemMin           = 24
-	VMMemMax           = 48
+	VMCPUMax = 19 // must be < 20
+	VMMemMin = 24
+	VMMemMax = 48
 
 	// Supported OS IDs
-	OSKylin      = "kylin"
-	OSCentOS     = "centos"
-	OSNeoKylin   = "neokylin"
+	OSKylin    = "kylin"
+	OSCentOS   = "centos"
+	OSNeoKylin = "neokylin"
 )

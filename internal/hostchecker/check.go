@@ -53,11 +53,16 @@ func checkHost(ip string, sshPort int, sshUser, sshPasswordB64 string, timeout t
 	}
 
 	reasons := evaluateRules(sysInfo)
+
+	resolvedDataPath, resolvedInstallPath := resolvePaths(sysInfo.HasData, sysInfo.Virt)
+
 	return CheckResult{
-		IP:      ip,
-		Passed:  len(reasons) == 0,
-		Reasons: reasons,
-		SysInfo: &sysInfo,
+		IP:                  ip,
+		Passed:              len(reasons) == 0,
+		Reasons:             reasons,
+		SysInfo:             &sysInfo,
+		ResolvedDataPath:    resolvedDataPath,
+		ResolvedInstallPath: resolvedInstallPath,
 	}, nil
 }
 
@@ -190,4 +195,42 @@ func evaluateRules(info SysInfo) []string {
 	}
 
 	return reasons
+}
+
+// resolvePaths determines data_path and install_path based on mount status and virtualization type.
+func resolvePaths(hasData bool, virt string) (dataPath, installPath string) {
+	if hasData && virt == "none" {
+		return "/data", "/data"
+	}
+	return "/", "/"
+}
+
+// ResolvePaths performs a lightweight SSH mount check for hosts when --skip-check is used.
+// It only checks /data mount status and sets resolved paths; hosts that fail SSH get "/" defaults.
+func ResolvePaths(hosts []map[string]string, sshPort int, sshUser, sshPasswordB64 string, timeout time.Duration) []CheckResult {
+	results := make([]CheckResult, 0, len(hosts))
+	for _, host := range hosts {
+		ip := strings.TrimSpace(host["server_ip"])
+		if ip == "" {
+			continue
+		}
+		cr := CheckResult{IP: ip, ResolvedDataPath: "/", ResolvedInstallPath: "/"}
+
+		c, err := NewClient(ip, sshPort, sshUser, sshPasswordB64, timeout)
+		if err != nil {
+			// SSH failed — default to "/"
+			results = append(results, cr)
+			continue
+		}
+
+		_, err = c.Run("df -BG /data")
+		c.Close()
+
+		if err == nil {
+			cr.ResolvedDataPath = "/data"
+			cr.ResolvedInstallPath = "/data"
+		}
+		results = append(results, cr)
+	}
+	return results
 }

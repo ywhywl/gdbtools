@@ -113,7 +113,16 @@ func Run(args []string) (int, error) {
 	// --- Pre-check hosts ---
 	var checkResults []hostchecker.CheckResult
 	if skipCheck {
-		log.Printf("跳过前置检查 (--skip-check)")
+		log.Printf("跳过前置检查 (--skip-check)，自动检测 /data 挂载以确定路径")
+		resolvedB64 := resolveSSHPasswordB64(sshPassword, sshPasswordB64)
+		checkResults = hostchecker.ResolvePaths(hosts, sshPort, sshUser, resolvedB64, time.Duration(checkTimeout)*time.Second)
+		for i, host := range hosts {
+			ip := strings.TrimSpace(host["server_ip"])
+			if i < len(checkResults) && checkResults[i].IP == ip {
+				host["data_path"] = checkResults[i].ResolvedDataPath
+				host["install_path"] = checkResults[i].ResolvedInstallPath
+			}
+		}
 	} else {
 		resolvedB64 := resolveSSHPasswordB64(sshPassword, sshPasswordB64)
 		log.Printf("开始前置检查，超时 %ds/台", checkTimeout)
@@ -130,16 +139,19 @@ func Run(args []string) (int, error) {
 		}
 		log.Printf("前置检查完成: 通过 %d, 未通过 %d", passed, failed)
 
-		// Filter: keep only passed hosts
-		passedIPs := map[string]bool{}
+		// Filter: keep only passed hosts, inject resolved paths
+		passedResults := map[string]hostchecker.CheckResult{}
 		for _, r := range checkResults {
 			if r.Passed {
-				passedIPs[r.IP] = true
+				passedResults[r.IP] = r
 			}
 		}
 		filtered := make([]map[string]string, 0, passed)
 		for _, host := range hosts {
-			if passedIPs[strings.TrimSpace(host["server_ip"])] {
+			ip := strings.TrimSpace(host["server_ip"])
+			if r, ok := passedResults[ip]; ok {
+				host["data_path"] = r.ResolvedDataPath
+				host["install_path"] = r.ResolvedInstallPath
 				filtered = append(filtered, host)
 			}
 		}

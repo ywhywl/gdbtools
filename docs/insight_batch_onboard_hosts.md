@@ -25,17 +25,15 @@ CSV 常用字段：
 | --- | --- | --- |
 | `room_name` | 否 | 机房名称 |
 | `server_ip` | 是 | 主机 IP |
-| `install_path` | 否 | 安装路径，默认 `/` |
-| `data_path` | 否 | 数据路径，默认 `/` |
 | `system_parameter` | 否 | 系统参数，默认 `1` |
 | `region` | 否 | 作为 `label` 使用 |
 
 CSV 示例：
 
 ```csv
-room_name,server_ip,install_path,data_path,system_parameter,region
-room_a,10.0.0.21,/data/gdb,/data/gdb/data,1,shanghai
-room_a,10.0.0.22,/data/gdb,/data/gdb/data,1,shanghai
+room_name,server_ip,system_parameter,region
+room_a,10.0.0.21,1,shanghai
+room_a,10.0.0.22,1,shanghai
 ```
 
 JSON 示例：
@@ -45,8 +43,6 @@ JSON 示例：
   {
     "room_name": "room_a",
     "server_ip": "10.0.0.21",
-    "install_path": "/data/gdb",
-    "data_path": "/data/gdb/data",
     "system_parameter": "1",
     "region": "shanghai"
   }
@@ -84,6 +80,15 @@ JSON 示例：
 ## 前置检查
 
 命令默认在纳管前通过 SSH 检查每台主机，未通过检查的主机会被跳过。
+
+### 路径自动确定
+
+`data_path` 和 `install_path` **不再需要在 CSV/JSON 中指定**，由前置检查自动确定：
+
+- 通过 `df -BG /data` 判断 `/data` 是否为真实挂载点（普通创建的目录不算）
+- 有 `/data` 挂载 → `data_path=/data`, `install_path=/data`
+- 无 `/data` 挂载 → `data_path=/`, `install_path=/`
+- 即使使用 `--skip-check` 跳过完整检查，也会执行轻量的挂载检测来确定路径
 
 ### 检查规则
 
