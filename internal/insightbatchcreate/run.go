@@ -345,9 +345,13 @@ func loadRows(path string, autoSelect bool) ([]normalizedRow, error) {
 			return nil, fmt.Errorf("第 %d 行 server_type 不能为空", i+1)
 		}
 
-		templates, err := resolveTemplates(serverType, false)
-		if err != nil {
-			return nil, err
+		templates := templateSelection{}
+		if serverType != "" {
+			t, err := resolveTemplates(serverType, false)
+			if err != nil {
+				return nil, err
+			}
+			templates = t
 		}
 
 		rows = append(rows, normalizedRow{
