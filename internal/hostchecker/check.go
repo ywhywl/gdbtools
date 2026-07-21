@@ -99,9 +99,13 @@ func collectSysInfo(c *Client, ip string) (SysInfo, error) {
 		info.MemGB = val
 	}
 
-	// 4. /data mount check
-	_, err = c.Run("df -BG /data")
-	info.HasData = (err == nil)
+	// 4. /data mount check - verify it's a real mount point, not just a directory
+	out, err = c.Run("df -BG /data | awk 'NR==2{print $6}'")
+	info.HasData = false
+	if err == nil {
+		mountPoint := strings.TrimSpace(out)
+		info.HasData = (mountPoint == "/data")
+	}
 	if info.HasData {
 		// get available space
 		out2, err2 := c.Run("df -BG /data | awk 'NR==2{gsub(/G/,\"\",$4); print $4}'")
@@ -222,14 +226,20 @@ func ResolvePaths(hosts []map[string]string, sshPort int, sshUser string, auth *
 			continue
 		}
 
-		_, err = c.Run("df -BG /data")
+		out, err := c.Run("df -BG /data | awk 'NR==2{print $6}'")
 		c.Close()
 
 		if err != nil {
 			log.Printf("[path-resolve] WARN %s: df /data 失败: %s, 使用默认路径 /", ip, err)
 		} else {
-			cr.ResolvedDataPath = "/data"
-			cr.ResolvedInstallPath = "/data"
+			mountPoint := strings.TrimSpace(out)
+			if mountPoint == "/data" {
+				cr.ResolvedDataPath = "/data"
+				cr.ResolvedInstallPath = "/data"
+				log.Printf("[path-resolve] INFO %s: 检测到独立 /data 挂载点", ip)
+			} else {
+				log.Printf("[path-resolve] INFO %s: /data 不是独立挂载点 (当前挂载: %s), 使用默认路径 /", ip, mountPoint)
+			}
 		}
 		results = append(results, cr)
 	}
