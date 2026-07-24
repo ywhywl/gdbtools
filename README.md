@@ -429,6 +429,7 @@ Use these rules to avoid layout drift:
 | `db-auth-lookup` | Go CLI | Query database authorization details for a business from four Excel/CSV mapping files | [Design](docs/db_auth_lookup_design.md), [Usage](docs/db_auth_lookup_usage.md) |
 | `mysqlcompare` | Go CLI | Compare MySQL source/target schema structure and privileges | [Usage](docs/mysqlcompare_usage.md) |
 | `mysqlpricheck` | Go CLI | Audit MySQL 5.7 privileges inside a single instance | [Design](docs/mysqlpricheck_design.md), [Usage](docs/mysqlpricheck_usage.md) |
+| `mysql-rename-db` | Go CLI | Rename MySQL 5.7 database using RENAME TABLE with pre-flight checks | [Usage](docs/mysql_rename_db_usage.md) |
 
 Build or run:
 
