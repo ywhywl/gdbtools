@@ -53,6 +53,7 @@ func Run(args []string) (int, error) {
 	var debug bool
 	var skipCheck bool
 	var checkTimeout int
+	var requiredOSVersion string
 	var authFlags insightopen.AuthFlags
 
 	fs.StringVar(&api, "api", "", "Insight API 地址")
@@ -71,6 +72,7 @@ func Run(args []string) (int, error) {
 	fs.BoolVar(&debug, "debug", false, "打印请求和响应的 debug 日志")
 	fs.BoolVar(&skipCheck, "skip-check", false, "跳过主机前置检查")
 	fs.IntVar(&checkTimeout, "check-timeout", 15, "单台主机检查超时(秒)")
+	fs.StringVar(&requiredOSVersion, "required-os-version", "V10", "要求的麒麟操作系统版本 (默认: V10)")
 	insightopen.AddAuthFlags(fs, &authFlags)
 
 	if err := fs.Parse(args); err != nil {
@@ -154,8 +156,8 @@ func Run(args []string) (int, error) {
 		if !sshAuth.HasAuth() {
 			return 2, fmt.Errorf("前置检查需要 SSH 认证: 请配置 SSH key、SSH agent 或提供 --ssh-password")
 		}
-		log.Printf("开始前置检查，超时 %ds/台", checkTimeout)
-		checkResults = hostchecker.CheckAll(hosts, sshPort, sshUser, sshAuth, time.Duration(checkTimeout)*time.Second)
+		log.Printf("开始前置检查，超时 %ds/台，要求操作系统: 麒麟 %s", checkTimeout, requiredOSVersion)
+		checkResults = hostchecker.CheckAll(hosts, sshPort, sshUser, sshAuth, time.Duration(checkTimeout)*time.Second, requiredOSVersion)
 
 		passed := 0
 		failed := 0
@@ -532,7 +534,10 @@ func buildPrecheckOutput(results []hostchecker.CheckResult) []map[string]any {
 				virtType = "physical"
 			}
 			item["os"] = r.SysInfo.OS
+			item["os_version"] = r.SysInfo.OSVersion
 			item["arch"] = r.SysInfo.CPUArch
+			item["cpu_vendor"] = r.SysInfo.CPUVendor
+			item["cpu_model"] = r.SysInfo.CPUModel
 			item["type"] = virtType
 			item["cpu"] = r.SysInfo.CPU
 			item["mem_gb"] = r.SysInfo.MemGB

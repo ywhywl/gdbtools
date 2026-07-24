@@ -9,7 +9,10 @@ type SysInfo struct {
 	HasData     bool   // whether /data is mounted
 	DataAvailGB int    // /data available space in GB
 	OS          string // "kylin", "centos", or other
+	OSVersion   string // OS version, e.g. "V10", "V10 SP1"
 	CPUArch     string // "aarch64", "x86_64", etc.
+	CPUVendor   string // "hygon", "kunpeng", "intel", "amd", "unknown"
+	CPUModel    string // full CPU model string from lscpu or /proc/cpuinfo
 }
 
 // CheckResult holds the result of checking a single host.
@@ -42,4 +45,11 @@ const (
 	OSKylin    = "kylin"
 	OSCentOS   = "centos"
 	OSNeoKylin = "neokylin"
+
+	// CPU vendor types
+	CPUVendorHygon   = "hygon"   // 海光
+	CPUVendorKunpeng = "kunpeng" // 鲲鹏
+	CPUVendorIntel   = "intel"
+	CPUVendorAMD     = "amd"
+	CPUVendorUnknown = "unknown"
 )
