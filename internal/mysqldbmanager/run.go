@@ -105,20 +105,20 @@ Commands:
   drop      Drop a database (name must end with 'bak')
 
 Options:
-  --host <ip>             MySQL host IP (required unless --socket)
-  --port <port>           MySQL port (default: 3306)
-  --user <user>           MySQL username
-  --password <pass>       MySQL password
-  --socket <path>         MySQL unix socket path
-  --config <file>         JSON config file
-  --defaults-file <file>  MySQL defaults file (e.g., /etc/my.cnf)
-  --old-dbname <name>     Source database name (required)
-  --new-dbname <name>     Target database name (rename only, default: old-dbname + "bak")
-  --skip-precheck         Skip all pre-checks
-  --full-check            Force full checks (drop mode only)
-  --dry-run               Show what would happen (required first for drop)
-  --output-format <fmt>   Output format: text or json (default: text)
-  --output <file>         Write output to file instead of stdout
+  --host <ip>                MySQL host IP (required unless --socket)
+  --port <port>              MySQL port (default: 3306)
+  --user <user>              MySQL username
+  --password <pass>          MySQL password
+  --socket <path>            MySQL unix socket path
+  --config <file>            JSON config file
+  --defaults-file <file>     MySQL defaults file (e.g., /etc/my.cnf)
+  --old-dbname <name>        Source database name (required)
+  --new-dbname <name>        Target database name (rename only, default: old-dbname + "bak")
+  --skip-precheck            Skip all pre-checks
+  --skip-business-checks     Skip business checks (connections, modifications, locks, replication)
+  --dry-run                  Show what would happen
+  --output-format <fmt>      Output format: text or json (default: text)
+  --output <file>            Write output to file instead of stdout
 
 Examples:
   # Rename database (dry-run first)
@@ -128,9 +128,12 @@ Examples:
   # Rename with default new name (app_db -> app_dbbak)
   mysql-db-manager rename --host 192.168.1.100 --user root --old-dbname app_db
 
-  # Drop database (must dry-run first)
+  # Drop database (checks connections/modifications by default)
   mysql-db-manager drop --host 192.168.1.100 --user root --old-dbname app_db_bak --dry-run
   mysql-db-manager drop --host 192.168.1.100 --user root --old-dbname app_db_bak
+
+  # Drop database skipping business checks
+  mysql-db-manager drop --host 192.168.1.100 --user root --old-dbname app_db_bak --skip-business-checks
 `)
 }
 
@@ -145,7 +148,7 @@ func parseArgs(command string, argv []string) (Options, error) {
 	var oldDBName string
 	var newDBName string
 	var skipPreCheck bool
-	var fullCheck bool
+	var skipBusinessChecks bool
 	var dryRun bool
 	var connectTimeout int
 	var outputFormat string
@@ -163,7 +166,7 @@ func parseArgs(command string, argv []string) (Options, error) {
 	fs.StringVar(&oldDBName, "old-dbname", "", "Source database name (required)")
 	fs.StringVar(&newDBName, "new-dbname", "", "Target database name (rename only)")
 	fs.BoolVar(&skipPreCheck, "skip-precheck", false, "Skip all pre-checks")
-	fs.BoolVar(&fullCheck, "full-check", false, "Force full checks (drop mode)")
+	fs.BoolVar(&skipBusinessChecks, "skip-business-checks", false, "Skip business checks")
 	fs.BoolVar(&dryRun, "dry-run", false, "Show what would happen")
 	fs.IntVar(&connectTimeout, "connect-timeout", 5, "Connection timeout in seconds")
 	fs.StringVar(&outputFormat, "output-format", "text", "Output format: text or json")
@@ -263,18 +266,18 @@ func parseArgs(command string, argv []string) (Options, error) {
 	}
 
 	return Options{
-		Command:        cmd,
-		Target:         target,
-		ConfigPath:     configPath,
-		DefaultsFile:   defaultsFile,
-		OldDBName:      oldDBName,
-		NewDBName:      newDBName,
-		SkipPreCheck:   skipPreCheck,
-		FullCheck:      fullCheck,
-		DryRun:         dryRun,
-		ConnectTimeout: connectTimeout,
-		OutputFormat:   outputFormat,
-		OutputPath:     outputPath,
+		Command:            cmd,
+		Target:             target,
+		ConfigPath:         configPath,
+		DefaultsFile:       defaultsFile,
+		OldDBName:          oldDBName,
+		NewDBName:          newDBName,
+		SkipPreCheck:       skipPreCheck,
+		SkipBusinessChecks: skipBusinessChecks,
+		DryRun:             dryRun,
+		ConnectTimeout:     connectTimeout,
+		OutputFormat:       outputFormat,
+		OutputPath:         outputPath,
 	}, nil
 }
 

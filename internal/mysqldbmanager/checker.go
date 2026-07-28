@@ -13,7 +13,7 @@ func runPreChecks(client *MySQLClient, options Options) (PreCheckReport, error) 
 	}
 
 	isDropMode := options.Command == CommandDrop
-	skipBusinessChecks := isDropMode && !options.FullCheck
+	skipBusinessChecks := options.SkipBusinessChecks
 
 	// Critical checks - always run
 	result := checkSourceDatabaseExists(client, options.OldDBName)
@@ -55,32 +55,32 @@ func runPreChecks(client *MySQLClient, options Options) (PreCheckReport, error) 
 		}
 	}
 
-	// Business checks - skip in drop mode unless --full-check
+	// Business checks - can be skipped with --skip-business-checks
 	if skipBusinessChecks {
 		// Add skipped check entries
 		report.Checks = append(report.Checks, PreCheckResult{
 			CheckName: "active_connections",
 			Level:     "skipped",
 			Passed:    true,
-			Message:   "Active connections check: skipped in drop mode (use --full-check to enable)",
+			Message:   "Active connections check: skipped (use without --skip-business-checks to enable)",
 		})
 		report.Checks = append(report.Checks, PreCheckResult{
 			CheckName: "recent_modifications",
 			Level:     "skipped",
 			Passed:    true,
-			Message:   "Recent modifications check: skipped in drop mode (use --full-check to enable)",
+			Message:   "Recent modifications check: skipped (use without --skip-business-checks to enable)",
 		})
 		report.Checks = append(report.Checks, PreCheckResult{
 			CheckName: "table_locks",
 			Level:     "skipped",
 			Passed:    true,
-			Message:   "Table locks check: skipped in drop mode (use --full-check to enable)",
+			Message:   "Table locks check: skipped (use without --skip-business-checks to enable)",
 		})
 		report.Checks = append(report.Checks, PreCheckResult{
 			CheckName: "replication_status",
 			Level:     "skipped",
 			Passed:    true,
-			Message:   "Replication status check: skipped in drop mode (use --full-check to enable)",
+			Message:   "Replication status check: skipped (use without --skip-business-checks to enable)",
 		})
 	} else {
 		// Warning-level checks

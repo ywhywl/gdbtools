@@ -29,18 +29,18 @@ const (
 )
 
 type Options struct {
-	Command        Command
-	Target         ConnectionConfig
-	ConfigPath     string
-	DefaultsFile   string
-	OldDBName      string
-	NewDBName      string
-	SkipPreCheck   bool
-	FullCheck      bool
-	DryRun         bool
-	ConnectTimeout int
-	OutputFormat   string
-	OutputPath     string
+	Command            Command
+	Target             ConnectionConfig
+	ConfigPath         string
+	DefaultsFile       string
+	OldDBName          string
+	NewDBName          string
+	SkipPreCheck       bool
+	SkipBusinessChecks bool
+	DryRun             bool
+	ConnectTimeout     int
+	OutputFormat       string
+	OutputPath         string
 }
 
 type FileConfig struct {
