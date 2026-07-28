@@ -41,8 +41,7 @@ mysql-db-manager rename --host 192.168.1.100 --user root \
   --old-dbname app_db --new-dbname app_db_backup
 
 # Dry-run first (recommended)
-mysql-db-manager rename --host 192.168.1.100 --user root \
-  --old-dbname app_db --dry-run
+mysql-db-manager rename --host 192.168.1.100 --user root    --old-dbname app_db --dry-run
 ```
 
 ### drop - Delete Database
