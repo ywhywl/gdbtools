@@ -34,7 +34,7 @@ const (
 
 	// VM requirements
 	VMCPUMax = 30
-	VMMemMin = 24
+	VMMemMin = 22
 	VMMemMax = 48
 
 	// Tolerance for measurement偏差

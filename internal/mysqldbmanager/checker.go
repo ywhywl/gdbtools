@@ -84,16 +84,24 @@ func runPreChecks(client *MySQLClient, options Options) (PreCheckReport, error) 
 		})
 	} else {
 		// Warning-level checks
-		result = checkActiveConnections(client, options.OldDBName)
+		result = checkActiveConnections(client, options.OldDBName, isDropMode)
 		report.Checks = append(report.Checks, result)
 		if !result.Passed {
-			report.HasWarnings = true
+			if result.Level == "error" {
+				report.Passed = false
+			} else {
+				report.HasWarnings = true
+			}
 		}
 
-		result = checkRecentModifications(client, options.OldDBName)
+		result = checkRecentModifications(client, options.OldDBName, isDropMode)
 		report.Checks = append(report.Checks, result)
 		if !result.Passed {
-			report.HasWarnings = true
+			if result.Level == "error" {
+				report.Passed = false
+			} else {
+				report.HasWarnings = true
+			}
 		}
 
 		result = checkTableLocks(client, options.OldDBName)
@@ -293,12 +301,19 @@ func checkCrossDatabaseForeignKeys(client *MySQLClient, dbName string) PreCheckR
 	}
 }
 
-func checkActiveConnections(client *MySQLClient, dbName string) PreCheckResult {
+func checkActiveConnections(client *MySQLClient, dbName string, isDropMode bool) PreCheckResult {
 	connections, err := client.GetActiveConnections(dbName)
+
+	// Determine level based on mode: error for rename, warning for drop
+	level := "warning"
+	if !isDropMode {
+		level = "error"
+	}
+
 	if err != nil {
 		return PreCheckResult{
 			CheckName: "active_connections",
-			Level:     "warning",
+			Level:     level,
 			Passed:    false,
 			Message:   fmt.Sprintf("Failed to check connections: %v", err),
 		}
@@ -307,7 +322,7 @@ func checkActiveConnections(client *MySQLClient, dbName string) PreCheckResult {
 	if len(connections) > 0 {
 		return PreCheckResult{
 			CheckName: "active_connections",
-			Level:     "warning",
+			Level:     level,
 			Passed:    false,
 			Message:   fmt.Sprintf("%d active connection(s) detected (including Sleep)", len(connections)),
 			Details:   connections,
@@ -316,18 +331,25 @@ func checkActiveConnections(client *MySQLClient, dbName string) PreCheckResult {
 
 	return PreCheckResult{
 		CheckName: "active_connections",
-		Level:     "warning",
+		Level:     level,
 		Passed:    true,
 		Message:   fmt.Sprintf("No active connections to %s", dbName),
 	}
 }
 
-func checkRecentModifications(client *MySQLClient, dbName string) PreCheckResult {
+func checkRecentModifications(client *MySQLClient, dbName string, isDropMode bool) PreCheckResult {
 	tables, err := client.GetRecentlyModifiedTables(dbName, 10)
+
+	// Determine level based on mode: error for rename, warning for drop
+	level := "warning"
+	if !isDropMode {
+		level = "error"
+	}
+
 	if err != nil {
 		return PreCheckResult{
 			CheckName: "recent_modifications",
-			Level:     "warning",
+			Level:     level,
 			Passed:    false,
 			Message:   fmt.Sprintf("Failed to check modifications: %v", err),
 		}
@@ -336,7 +358,7 @@ func checkRecentModifications(client *MySQLClient, dbName string) PreCheckResult
 	if len(tables) > 0 {
 		return PreCheckResult{
 			CheckName: "recent_modifications",
-			Level:     "warning",
+			Level:     level,
 			Passed:    false,
 			Message:   "Data modified in last 10 days",
 			Details: map[string]interface{}{
@@ -348,7 +370,7 @@ func checkRecentModifications(client *MySQLClient, dbName string) PreCheckResult
 
 	return PreCheckResult{
 		CheckName: "recent_modifications",
-		Level:     "warning",
+		Level:     level,
 		Passed:    true,
 		Message:   "No recent modifications detected in last 10 days",
 	}
