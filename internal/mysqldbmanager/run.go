@@ -81,7 +81,7 @@ func Run(argv []string) (int, error) {
 			return 2, nil
 		}
 	} else if options.Command == CommandDrop {
-		result, _ := dropDatabase(client, options.OldDBName)
+		result, _ := dropDatabase(client, options)
 		report.DropResult = &result
 
 		output := renderReport(report, options.OutputFormat)
@@ -119,6 +119,8 @@ Options:
   --dry-run                  Show what would happen
   --output-format <fmt>      Output format: text or json (default: text)
   --output <file>            Write output to file instead of stdout
+  --batch-size <n>           Drop tables in batches (drop mode only, 0=drop database directly, default: 1)
+  --sleep-interval <ms>      Milliseconds to sleep between batches (drop mode only, default: 100)
 
 Examples:
   # Rename database (dry-run first)
@@ -134,6 +136,9 @@ Examples:
 
   # Drop database skipping business checks
   mysql-db-manager drop --host 192.168.1.100 --user root --old-dbname app_db_bak --skip-business-checks
+
+  # Drop database gradually (batch mode to reduce impact on other databases)
+  mysql-db-manager drop --host 192.168.1.100 --user root --old-dbname app_db_bak --batch-size 100 --sleep-interval 500
 `)
 }
 
@@ -153,6 +158,8 @@ func parseArgs(command string, argv []string) (Options, error) {
 	var connectTimeout int
 	var outputFormat string
 	var outputPath string
+	var batchSize int
+	var sleepInterval int
 
 	fs := flag.NewFlagSet("mysql-db-manager "+command, flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
@@ -171,6 +178,8 @@ func parseArgs(command string, argv []string) (Options, error) {
 	fs.IntVar(&connectTimeout, "connect-timeout", 5, "Connection timeout in seconds")
 	fs.StringVar(&outputFormat, "output-format", "text", "Output format: text or json")
 	fs.StringVar(&outputPath, "output", "", "Write output to file instead of stdout")
+	fs.IntVar(&batchSize, "batch-size", 1, "Drop tables in batches (0=drop database directly, drop mode only)")
+	fs.IntVar(&sleepInterval, "sleep-interval", 100, "Milliseconds to sleep between batches (drop mode only)")
 
 	if err := fs.Parse(argv); err != nil {
 		return Options{}, err
@@ -278,6 +287,8 @@ func parseArgs(command string, argv []string) (Options, error) {
 		ConnectTimeout:     connectTimeout,
 		OutputFormat:       outputFormat,
 		OutputPath:         outputPath,
+		BatchSize:          batchSize,
+		SleepInterval:      sleepInterval,
 	}, nil
 }
 

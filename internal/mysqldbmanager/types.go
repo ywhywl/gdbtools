@@ -41,6 +41,9 @@ type Options struct {
 	ConnectTimeout     int
 	OutputFormat       string
 	OutputPath         string
+	// Drop mode specific options
+	BatchSize     int // Number of tables to drop in one batch (0 = drop database directly)
+	SleepInterval int // Milliseconds to sleep between batches
 }
 
 type FileConfig struct {
@@ -139,10 +142,13 @@ type RenameResult struct {
 }
 
 type DropResult struct {
-	Success      bool   `json:"success"`
-	Database     string `json:"database"`
-	DroppedCount int    `json:"dropped_count"`
-	Error        string `json:"error,omitempty"`
+	Success       bool     `json:"success"`
+	Database      string   `json:"database"`
+	DroppedCount  int      `json:"dropped_count"`
+	TotalCount    int      `json:"total_count"`
+	DroppedTables []string `json:"dropped_tables,omitempty"`
+	Mode          string   `json:"mode"` // "direct" or "gradual"
+	Error         string   `json:"error,omitempty"`
 }
 
 type RunReport struct {

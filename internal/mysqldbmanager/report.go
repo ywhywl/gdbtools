@@ -282,11 +282,24 @@ func renderDropResultText(result DropResult) string {
 
 	if result.Success {
 		sb.WriteString(fmt.Sprintf("✓ Successfully dropped database: %s\n", result.Database))
-		sb.WriteString(fmt.Sprintf("  Dropped %d table(s)\n", result.DroppedCount))
+		sb.WriteString(fmt.Sprintf("  Mode: %s\n", result.Mode))
+		sb.WriteString(fmt.Sprintf("  Dropped %d/%d table(s)\n", result.DroppedCount, result.TotalCount))
+		if result.Mode == "gradual" && len(result.DroppedTables) > 0 {
+			sb.WriteString(fmt.Sprintf("  First 10 tables: %v\n", result.DroppedTables[:min(10, len(result.DroppedTables))]))
+		}
 	} else {
 		sb.WriteString(fmt.Sprintf("✗ Failed to drop database: %s\n", result.Database))
+		sb.WriteString(fmt.Sprintf("  Mode: %s\n", result.Mode))
+		sb.WriteString(fmt.Sprintf("  Dropped %d/%d table(s) before error\n", result.DroppedCount, result.TotalCount))
 		sb.WriteString(fmt.Sprintf("  Error: %s\n", result.Error))
 	}
 
 	return sb.String()
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

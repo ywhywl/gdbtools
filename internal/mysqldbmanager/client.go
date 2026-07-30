@@ -403,3 +403,9 @@ func (c *MySQLClient) DropDatabase(dbName string) error {
 	_, err := c.db.Exec(query)
 	return err
 }
+
+func (c *MySQLClient) DropTable(dbName, tableName string) error {
+	query := fmt.Sprintf("DROP TABLE IF EXISTS `%s`.`%s`", dbName, tableName)
+	_, err := c.db.Exec(query)
+	return err
+}

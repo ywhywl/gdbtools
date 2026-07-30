@@ -304,11 +304,8 @@ func checkCrossDatabaseForeignKeys(client *MySQLClient, dbName string) PreCheckR
 func checkActiveConnections(client *MySQLClient, dbName string, isDropMode bool) PreCheckResult {
 	connections, err := client.GetActiveConnections(dbName)
 
-	// Determine level based on mode: error for rename, warning for drop
-	level := "warning"
-	if !isDropMode {
-		level = "error"
-	}
+	// Always use error level - both rename and drop modes block on active connections
+	level := "error"
 
 	if err != nil {
 		return PreCheckResult{
@@ -340,11 +337,8 @@ func checkActiveConnections(client *MySQLClient, dbName string, isDropMode bool)
 func checkRecentModifications(client *MySQLClient, dbName string, isDropMode bool) PreCheckResult {
 	tables, err := client.GetRecentlyModifiedTables(dbName, 10)
 
-	// Determine level based on mode: error for rename, warning for drop
-	level := "warning"
-	if !isDropMode {
-		level = "error"
-	}
+	// Always use error level - both rename and drop modes block on recent modifications
+	level := "error"
 
 	if err != nil {
 		return PreCheckResult{
