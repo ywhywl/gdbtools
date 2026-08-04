@@ -525,16 +525,42 @@ func buildCNInstallList(row normalizedRow, args runArgs) []map[string]any {
 		if ip == "" {
 			continue
 		}
-		for _, item := range []struct {
+
+		// 根据角色确定端口配置
+		var ports []struct {
 			Suffix      int
 			ServicePort int
-		}{{1, 3306}, {2, 3307}} {
-			installUser := fmt.Sprintf("%sdbproxy%d", args.Prefix, item.Suffix)
+		}
+
+		switch role {
+		case "LS":
+			// LS 只有 3308 端口，用户名从 nudbproxy1 开始
+			ports = []struct {
+				Suffix      int
+				ServicePort int
+			}{{1, 3308}}
+		case "OS":
+			// OS 只有 3309 端口，用户名从 nudbproxy1 开始
+			ports = []struct {
+				Suffix      int
+				ServicePort int
+			}{{1, 3309}}
+		default:
+			// M, S, TS 有 3306 和 3307 端口
+			ports = []struct {
+				Suffix      int
+				ServicePort int
+			}{{1, 3306}, {2, 3307}}
+		}
+
+		// 为每个端口创建安装项
+		for _, port := range ports {
+			installUser := fmt.Sprintf("%sdbproxy%d", args.Prefix, port.Suffix)
 			items = append(items, map[string]any{
 				"ip":          ip,
 				"installPath": fmt.Sprintf("%s/%s", args.BasePath, installUser),
 				"installUser": installUser,
-				"servicePort": item.ServicePort,
+				"servicePort": port.ServicePort,
 			})
 		}
 	}
