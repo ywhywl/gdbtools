@@ -199,15 +199,122 @@ func buildCNInstallList(row normalizedRow, args runArgs) []map[string]any {
 
 5. **DN 模版**：✅ OS 角色使用专用的 `template_{server_type}_dn_OS.json`（当前 Go 实现已正确）
 
+## 新发现的问题：OS 角色的 DN 模版未传入
+
+### 问题描述
+
+根据接口文档 `新增租户.txt`，`dnList` 中每个 DN 节点支持 `templateName` 字段：
+
+```json
+{
+  "dnInstallList": [
+    {
+      "dbgroupId": 1,
+      "teamList": [
+        {
+          "dnList": [
+            {
+              "ip": "127.0.0.1",
+              "dbRole": 1,
+              "installPath": "/home/goldendb",
+              "installUser": "db1",
+              "dataPath": "/home/goldendb",
+              "templateName": "custom_dn2.json"  // ✅ 支持单个 DN 指定模版
+            }
+          ],
+          "teamId": 1
+        }
+      ]
+    }
+  ]
+}
+```
+
+### 当前实现的问题
+
+**Go 实现** (`buildDNInstallList` 函数，第543-570行)：
+- 没有为 OS 角色的 DN 节点添加 `templateName` 字段
+- 应该使用 `row.Templates.DnOSTemplate`（`template_{server_type}_dn_OS.json`）
+
+**Python 实现** (`build_dn_install_list` 函数，第200-222行)：
+- 同样没有为 OS 角色添加 `templateName` 字段
+- 这是历史遗留问题
+
+### 正确的逻辑
+
+根据模版设计：
+- **普通角色（M, S, TS, LS）的 DN**：使用统一的 DN 模版（通过 `parameterTemplateInfos` 批量配置）
+- **OS 角色的 DN**：应该在 `dnList` 中单独指定 `templateName` 为 `template_{server_type}_dn_OS.json`
+
+### 需要修改的代码
+
+```go
+func buildDNInstallList(row normalizedRow, args runArgs) []map[string]any {
+    installUser := fmt.Sprintf("%sdb1", args.Prefix)
+    installPath := fmt.Sprintf("%s/%s", args.BasePath, installUser)
+    dataPath := installPath + "/data"
+
+    teamList := []map[string]any{}
+    for _, role := range roleSequence {
+        ip := row.RoleIPs[role]
+        if ip == "" {
+            continue
+        }
+        
+        dnItem := map[string]any{
+            "ip":          ip,
+            "dbRole":      roleToDBRole[role],
+            "installPath": installPath,
+            "installUser": installUser,
+            "dataPath":    dataPath,
+        }
+        
+        // OS 角色需要指定专用 DN 模版
+        if role == "OS" {
+            dnItem["templateName"] = row.Templates.DnOSTemplate
+        }
+        
+        teamList = append(teamList, map[string]any{
+            "teamId": roleToTeamID[role],
+            "dnList": []map[string]any{dnItem},
+        })
+    }
+    return []map[string]any{{
+        "dbgroupId": 1,
+        "teamList":  teamList,
+    }}
+}
+```
+
+### 模版应用规则总结
+
+根据接口文档的说明：
+
+1. **批量配置**（`parameterTemplateInfos`）：
+   - DN 类型模版应用于所有 DN 节点
+   - CN 类型模版应用于所有 CN 节点
+   
+2. **单个组件配置**（`templateName` 字段）：
+   - 单个组件的 `templateName` 优先级更高，会覆盖批量配置
+   - OS 角色的 DN 应该通过此字段指定专用模版
+
+### 实际应用场景
+
+当创建包含 OS 角色的集群时：
+- `parameterTemplateInfos` 中的 DN 模版 = `template_{server_type}_dn.json`（应用于 M, S, TS, LS）
+- OS 角色的 DN 在 `dnList` 中单独指定 `templateName` = `template_{server_type}_dn_OS.json`（覆盖批量配置）
+
 ## 实施建议
 
-1. **暂不实现**端口逻辑修改，等待明确需求
-2. 优先确认以下信息：
-   - LS/OS 的实际端口规则（从 Insight API 文档或实际部署中验证）
-   - LS 是否需要专用 CN 模版
-   - 用户名 suffix 的规则
-3. 创建测试用例验证新逻辑
-4. 更新文档说明端口分配规则
+### 已完成
+1. ✅ **CN 端口逻辑修复**：M/S/TS 使用 3306+3307，LS 使用 3308，OS 使用 3309
+2. ✅ **测试用例编写**：完整覆盖各角色端口分配
+3. ✅ **编译验证**：代码编译通过
+
+### 待实施
+1. **DN 模版传入修复**：在 `buildDNInstallList` 中为 OS 角色的 DN 添加 `templateName` 字段
+2. **测试用例**：验证 OS 角色的 DN 正确传入专用模版
+3. **集成测试**：使用真实 CSV 数据验证完整请求体格式
 
 ## 相关文件
 
