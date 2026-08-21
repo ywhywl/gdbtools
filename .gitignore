@@ -1,0 +1,32 @@
+# Go build outputs
+insight-batch-create
+insight-batch-add-cn
+insight-batch-add-dn
+insight-create-dbmgr
+mysqlcompare
+mysqlpricheck
+db-auth-lookup
+insight-batch-onboard-hosts
+x
+
+# Go test/cache
+.gocache/
+
+# Node (claude CLI dev dependency)
+node_modules/
+package.json
+package-lock.json
+
+# Test/sample data
+*.xlsx
+!docs/*.xlsx
+
+# Result screenshots
+*.jpg
+*.png
+*.jpeg
+
+# Local-only source, tests, and helper scripts
+/src/
+/tests/
+/scripts/

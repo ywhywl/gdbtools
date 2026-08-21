@@ -1,0 +1,6 @@
+num,insight_name,cluster_name,M,S,TS,LS,OS,gLobal_template,dn_template,cn_template,OS_cn_template
+1,insight1,SH23_manager_tmp,10.58.120.31,10.58.120.32,,,,template_vm_m_cluster,template_vm_m_dn,template_vm_m_cn,
+2,insight1,SH23_cips_gateway_tmp,10.58.120.35,10.58.120.36,,,,template_vm_m_cluster,template_vm_m_dn,template_vm_m_cn,
+3,insight3,SH23_clearing_center_tmp,10.58.120.37,10.58.120.38,,,,template_vm_m_cluster,template_vm_m_dn,template_vm_m_cn,
+4,insight4,SH23_rcmp_center_tmp,10.58.120.39,10.58.120.40,,,,template_vm_m_cluster,template_vm_m_dn,template_vm_m_cn,
+5,insight1,SH23_cfs_tmp,10.58.120.41,10.58.120.42,,,,template_vm_m_cluster,template_vm_m_dn,template_vm_m_cn,
