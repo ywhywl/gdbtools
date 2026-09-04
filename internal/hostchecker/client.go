@@ -230,6 +230,7 @@ func (c *Client) DetectVirt() string {
 		"kvm", "qemu", "vmware", "virtualbox", "xen", "hyper-v",
 		"bochs", "parallels", "virtuozzo", "alc",
 		"openstack", "proxmox", "nutanix",
+		"standard pc", // 常见 KVM/QEMU 虚拟机 DMI 产品名
 		// 国产云厂商虚拟机
 		"cvm", // 腾讯云 Cloud Virtual Machine
 		"ecs", // 阿里云 Elastic Compute Service

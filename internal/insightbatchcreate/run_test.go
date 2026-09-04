@@ -1,8 +1,56 @@
 package insightbatchcreate
 
 import (
+	"bytes"
+	"errors"
+	"strings"
 	"testing"
 )
+
+func TestRenderOutput(t *testing.T) {
+	output := map[string]any{
+		"success": true,
+		"summary": map[string]any{
+			"total":         1,
+			"success_count": 1,
+			"failed_count":  0,
+		},
+		"clusters": []map[string]any{{
+			"cluster_name":       "cluster_01",
+			"server_type":        "vm_l",
+			"status":             "success",
+			"task_id":            "task_01",
+			"template_selection": map[string]any{},
+			"error":              "",
+		}},
+	}
+
+	t.Run("json writes to provided writer", func(t *testing.T) {
+		var buffer bytes.Buffer
+		renderOutput(&buffer, "json", output)
+		if !strings.Contains(buffer.String(), `"success": true`) {
+			t.Fatalf("expected JSON result, got %q", buffer.String())
+		}
+	})
+
+	t.Run("text writes summary to provided writer", func(t *testing.T) {
+		var buffer bytes.Buffer
+		renderOutput(&buffer, "text", output)
+		if got := buffer.String(); got != "总计 total=1 success=1 failed=0\n" {
+			t.Fatalf("unexpected text output: %q", got)
+		}
+	})
+}
+
+func TestRenderTopLevelErrorWritesJSON(t *testing.T) {
+	var buffer bytes.Buffer
+	if err := renderTopLevelError(&buffer, errors.New("invalid input")); err != nil {
+		t.Fatalf("renderTopLevelError returned error: %v", err)
+	}
+	if !strings.Contains(buffer.String(), `"error": "invalid input"`) {
+		t.Fatalf("expected error JSON, got %q", buffer.String())
+	}
+}
 
 func TestBuildCNInstallList(t *testing.T) {
 	tests := []struct {

@@ -312,6 +312,12 @@ cluster_01     vm_l         自动    template_vm_l_dn.json              templat
 cluster_02     pm           CSV     template_pm_lowercase_0_dn.json    template_pm_lowercase_0_cn.json    template_pm_lowercase_0_cluster.json
 ```
 
+结果输出规则：
+
+- 退出码为 `0` 时，终端结果输出到标准输出
+- 退出码为 `1`、`2` 或 `3` 时，完整结果或错误 JSON 输出到标准错误
+- 使用 `--output` 时，完整 JSON 结果始终写入指定文件；终端仍按上述规则输出结果摘要
+
 ## 返回码
 
 - `0`：全部成功，或 `dry-run`

@@ -159,7 +159,10 @@ go run ./cmd/insight-create-dbmgr \
 
 ## 输出结果
 
-标准输出直接打印 Insight 接口返回的完整 JSON。
+接口返回的完整 JSON 按结果写入不同输出流：
+
+- 接口成功（`code == 1`）时写入标准输出
+- 接口失败（`code != 1`）时写入标准错误
 
 ## 返回码
 

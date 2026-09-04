@@ -263,7 +263,9 @@ func Run(args []string) (int, error) {
 			"failed_count":  failedCount,
 			"results":       results,
 		}
-		if len(checkResults) > 0 {
+		if skipCheck {
+			out["path_resolve"] = buildPathResolveOutput(checkResults)
+		} else if len(checkResults) > 0 {
 			out["precheck"] = buildPrecheckOutput(checkResults)
 		}
 		output, err := json.MarshalIndent(out, "", "  ")
@@ -360,6 +362,11 @@ func processBatch(
 			if len(ed.FailedIP) > 0 {
 				msg += fmt.Sprintf(", failedIp=[%s]", strings.Join(ed.FailedIP, ", "))
 			}
+		} else if dataMessages := extractStringSlice(resp["data"]); len(dataMessages) > 0 {
+			if m := strings.TrimSpace(fmt.Sprint(resp["msg"])); m != "" && m != "<nil>" {
+				msg += fmt.Sprintf(", msg=%s", m)
+			}
+			msg += fmt.Sprintf(", data=[%s]", strings.Join(dataMessages, "; "))
 		} else if m := strings.TrimSpace(fmt.Sprint(resp["msg"])); m != "" && m != "<nil>" {
 			msg += fmt.Sprintf(": %s", m)
 		}
@@ -386,11 +393,22 @@ func processBatch(
 		failedIPs[ip] = struct{}{}
 	}
 
+	matchedFailedIPs := 0
+	for _, host := range batch {
+		if _, ok := failedIPs[strings.TrimSpace(host["server_ip"])]; ok {
+			matchedFailedIPs++
+		}
+	}
+	failAll := finalData.Result == "fail" && matchedFailedIPs == 0
+
 	successCount := 0
 	failedCount := 0
 	for _, host := range batch {
 		ip := strings.TrimSpace(host["server_ip"])
-		if _, ok := failedIPs[ip]; ok {
+		if failAll {
+			status[ip] = "failed"
+			failedCount++
+		} else if _, ok := failedIPs[ip]; ok {
 			status[ip] = "failed"
 			failedCount++
 		} else {
@@ -568,6 +586,18 @@ func buildPrecheckOutput(results []hostchecker.CheckResult) []map[string]any {
 			item["reasons"] = r.Reasons
 		}
 		out = append(out, item)
+	}
+	return out
+}
+
+func buildPathResolveOutput(results []hostchecker.CheckResult) []map[string]any {
+	out := make([]map[string]any, 0, len(results))
+	for _, r := range results {
+		out = append(out, map[string]any{
+			"ip":           r.IP,
+			"data_path":    r.ResolvedDataPath,
+			"install_path": r.ResolvedInstallPath,
+		})
 	}
 	return out
 }

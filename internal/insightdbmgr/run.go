@@ -97,11 +97,12 @@ func Run(args []string) (int, error) {
 	if err != nil {
 		return 2, err
 	}
-	fmt.Println(string(output))
 
 	if toInt(resp["code"]) == 1 {
+		fmt.Println(string(output))
 		return 0, nil
 	}
+	fmt.Fprintln(os.Stderr, string(output))
 	return 1, nil
 }
 

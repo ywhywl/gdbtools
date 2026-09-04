@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"sort"
@@ -104,38 +105,38 @@ func Run(args []string) (int, error) {
 
 	parsedArgs, err := parseArgs(args)
 	if err != nil {
-		return 3, renderTopLevelError(err)
+		return 3, renderTopLevelError(os.Stderr, err)
 	}
 
 	auth, err := insightopen.ResolveAuth(parsedArgs.Auth)
 	if err != nil {
-		return 3, renderTopLevelError(err)
+		return 3, renderTopLevelError(os.Stderr, err)
 	}
 
 	client, err := insightopen.NewClient(parsedArgs.API, parsedArgs.NoVerify, auth)
 	if err != nil {
-		return 3, renderTopLevelError(err)
+		return 3, renderTopLevelError(os.Stderr, err)
 	}
 	passwordB64, err := resolvePasswordB64(parsedArgs.InsUserPwd, parsedArgs.InsUserPwdB64)
 	if err != nil {
-		return 3, renderTopLevelError(err)
+		return 3, renderTopLevelError(os.Stderr, err)
 	}
 
 	rows, err := loadRows(parsedArgs.CSV, parsedArgs.AutoSelect)
 	if err != nil {
-		return 3, renderTopLevelError(err)
+		return 3, renderTopLevelError(os.Stderr, err)
 	}
 
 	// Phase 2: SSH-based template auto-selection
 	if parsedArgs.AutoSelect {
 		rows, err = applyAutoSelect(rows, parsedArgs)
 		if err != nil {
-			return 3, renderTopLevelError(err)
+			return 3, renderTopLevelError(os.Stderr, err)
 		}
 	}
 
 	if parsedArgs.GTMUseMode != 1 {
-		return 3, renderTopLevelError(fmt.Errorf("第一版仅支持 --gtm-use-mode=1"))
+		return 3, renderTopLevelError(os.Stderr, fmt.Errorf("第一版仅支持 --gtm-use-mode=1"))
 	}
 
 	logTemplateSelection(rows)
@@ -190,17 +191,24 @@ func Run(args []string) (int, error) {
 	}
 
 	if err := writeOutput(parsedArgs.Output, output); err != nil {
-		return 3, renderTopLevelError(err)
+		return 3, renderTopLevelError(os.Stderr, err)
 	}
-	renderStdout(parsedArgs.Format, output)
 
+	exitCode := 0
 	if parsedArgs.DryRun || failedCount == 0 {
-		return 0, nil
+		exitCode = 0
+	} else if successCount > 0 {
+		exitCode = 1
+	} else {
+		exitCode = 2
 	}
-	if successCount > 0 {
-		return 1, nil
+
+	writer := io.Writer(os.Stdout)
+	if exitCode != 0 {
+		writer = os.Stderr
 	}
-	return 2, nil
+	renderOutput(writer, parsedArgs.Format, output)
+	return exitCode, nil
 }
 
 func parseArgs(args []string) (runArgs, error) {
@@ -774,22 +782,23 @@ func writeOutput(path string, payload map[string]any) error {
 	return os.WriteFile(path, append(data, '\n'), 0o644)
 }
 
-func renderStdout(format string, output map[string]any) {
+func renderOutput(w io.Writer, format string, output map[string]any) {
 	if format == "json" {
 		data, _ := json.MarshalIndent(output, "", "  ")
-		fmt.Println(string(data))
+		fmt.Fprintln(w, string(data))
 		return
 	}
 
 	summary, _ := output["summary"].(map[string]any)
-	log.Printf("总计 total=%v success=%v failed=%v", summary["total"], summary["success_count"], summary["failed_count"])
+	fmt.Fprintf(w, "总计 total=%v success=%v failed=%v\n", summary["total"], summary["success_count"], summary["failed_count"])
 	items, _ := output["clusters"].([]map[string]any)
 	if items == nil {
 		if generic, ok := output["clusters"].([]any); ok {
 			for _, item := range generic {
 				cluster, _ := item.(map[string]any)
-				log.Printf(
-					"cluster=%v server_type=%v status=%v task_id=%v templates=%v error=%v",
+				fmt.Fprintf(
+					w,
+					"cluster=%v server_type=%v status=%v task_id=%v templates=%v error=%v\n",
 					cluster["cluster_name"],
 					cluster["server_type"],
 					cluster["status"],
@@ -802,14 +811,14 @@ func renderStdout(format string, output map[string]any) {
 	}
 }
 
-func renderTopLevelError(err error) error {
+func renderTopLevelError(w io.Writer, err error) error {
 	output := map[string]any{
 		"success": false,
 		"summary": map[string]any{"total": 0, "success_count": 0, "failed_count": 0},
 		"error":   err.Error(),
 	}
 	data, _ := json.MarshalIndent(output, "", "  ")
-	fmt.Println(string(data))
+	fmt.Fprintln(w, string(data))
 	return nil
 }
 

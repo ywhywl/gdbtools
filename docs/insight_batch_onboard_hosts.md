@@ -147,7 +147,8 @@ go run ./cmd/insight-batch-onboard-hosts \
 - `success_count`：成功数量
 - `failed_count`：失败数量
 - `results`：纳管结果列表
-- `precheck`：前置检查详情（如果执行了检查）
+- `precheck`：前置检查详情（未使用 `--skip-check` 时）
+- `path_resolve`：路径检测结果（使用 `--skip-check` 时）
 
 `results` 格式：
 
@@ -188,6 +189,18 @@ go run ./cmd/insight-batch-onboard-hosts \
     "reasons": [
       "CPU 类型不支持: 检测到 Intel CPU (Intel(R) Xeon(R) CPU E5-2680 v4 @ 2.40GHz)，仅支持海光（非71xx系列）或鲲鹏"
     ]
+  }
+]
+```
+
+使用 `--skip-check` 时不输出 `precheck`，改为输出路径检测结果：
+
+```json
+"path_resolve": [
+  {
+    "ip": "10.0.0.21",
+    "data_path": "/",
+    "install_path": "/"
   }
 ]
 ```

@@ -64,7 +64,7 @@ SSH 认证用于前置检测和模版自动选择，认证优先级：
 使用 DMI + CPU hypervisor flag 双通道检测：
 
 1. **DMI product name** — `cat /sys/class/dmi/id/product_name`
-   - 包含虚拟化关键词（kvm/qemu/vmware/xen/hyper-v/cvm/ecs/bcc 等）→ VM
+   - 包含虚拟化关键词（kvm/qemu/standard pc/vmware/xen/hyper-v/cvm/ecs/bcc 等）→ VM
    - 包含物理机品牌词（dell/lenovo/inspur/huawei 等）→ 物理机
 2. **CPU hypervisor flag** — `grep -qw hypervisor /proc/cpuinfo`
    - 存在 → VM（x86 铁证）
@@ -133,3 +133,10 @@ OS 角色的 DN 节点使用独立模版，在 `dnInstallList` 的 `templateName
 | 1 | 部分成功、部分失败 |
 | 2 | 全部失败 |
 | 3 | 参数错误或执行前校验失败 |
+
+## 输出流
+
+- 进度和模版检测日志写入标准错误。
+- 退出码为 `0` 时，终端结果写入标准输出。
+- 退出码为 `1`、`2` 或 `3` 时，完整结果或错误 JSON 写入标准错误。
+- `--output` 指定时，完整 JSON 结果始终写入文件，终端仍输出结果摘要。
