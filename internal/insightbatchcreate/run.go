@@ -230,7 +230,7 @@ func parseArgs(args []string) (runArgs, error) {
 	fs.StringVar(&parsed.ClusterDesc, "cluster-desc", "", "集群描述")
 	fs.BoolVar(&parsed.WaitCompletion, "wait-completion", false, "提交后等待任务完成")
 	fs.IntVar(&parsed.MaxWaitTime, "max-wait-time", 3600, "最大等待秒数")
-	fs.IntVar(&parsed.PollInterval, "poll-interval", 10, "轮询间隔秒数")
+	fs.IntVar(&parsed.PollInterval, "poll-interval", 60, "轮询间隔秒数")
 	fs.IntVar(&parsed.MaxRetries, "max-retries", 1, "失败重试次数")
 	fs.BoolVar(&parsed.NoVerify, "no-verify", true, "跳过 SSL 证书校验")
 	fs.BoolVar(&parsed.DryRun, "dry-run", false, "只渲染请求体")
@@ -700,7 +700,7 @@ func pollCreateClusterProgress(ctx context.Context, client *insightopen.Client, 
 
 		result := strings.ToLower(strings.TrimSpace(fmt.Sprint(data["result"])))
 		process := data["process"]
-		log.Printf("taskId=%s progress=%v result=%s", taskID, process, firstNonEmpty(result, "unknown"))
+		fmt.Fprintf(os.Stderr, "taskId=%s progress=%v result=%s\n", taskID, process, firstNonEmpty(result, "unknown"))
 
 		if result == "success" {
 			return data, nil

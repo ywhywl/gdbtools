@@ -164,7 +164,7 @@ DN `teamId` 映射：
 | `--cluster-desc` | 集群描述，默认取 `cluster_name` |
 | `--wait-completion` | 提交后等待安装完成 |
 | `--max-wait-time` | 最大等待秒数，默认 `3600` |
-| `--poll-interval` | 轮询间隔秒数，默认 `10` |
+| `--poll-interval` | 轮询间隔秒数，默认 `60` |
 | `--max-retries` | 失败重试次数，默认 `1` |
 | `--no-verify` | 跳过 SSL 证书校验，默认开启 |
 | `--verify-ssl` | 启用 SSL 证书校验 |
