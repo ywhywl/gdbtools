@@ -17,18 +17,18 @@ type hostSysInfo struct {
 
 // memToServerType maps memory (GB) and virtualization to server_type.
 // Accounts for free -g rounding: a 32G server reports ~31G.
-// VM:  <24 → error (or vm_l when allowLowMemVM), [24,30) → vm_l,
+// VM:  <22 → error (or vm_l when allowLowMemVM), [22,30) → vm_l,
 // [30,46) → vm_m, >=46 → vm_h.
 // PM:  always → pm
 func memToServerType(memGB int, virt string, allowLowMemVM bool) (string, error) {
 	if virt == "none" {
 		return "pm", nil
 	}
-	if memGB < 24 {
+	if memGB < lowMemoryVMThresholdGB {
 		if allowLowMemVM {
 			return "vm_l", nil
 		}
-		return "", fmt.Errorf("虚拟机内存不足: %dG < 24G 最低要求", memGB)
+		return "", fmt.Errorf("虚拟机内存不足: %dG < %dG 最低要求", memGB, lowMemoryVMThresholdGB)
 	}
 	if memGB < 30 {
 		return "vm_l", nil
@@ -82,7 +82,7 @@ func resolveClusterServerType(ips []string, port int, user string, auth *hostche
 			return "", err
 		}
 
-		isLowMemoryVM := info.Virt != "none" && info.MemGB < 24
+		isLowMemoryVM := info.Virt != "none" && info.MemGB < lowMemoryVMThresholdGB
 		var st string
 		if isLowMemoryVM && !allowLowMemVM {
 			// Keep the original threshold failure unless an allowed cluster-level
@@ -113,7 +113,7 @@ func resolveClusterServerType(ips []string, port int, user string, auth *hostche
 		log.Printf("[模版检测] 告警：集群主机 server_type 不一致，%s 实际为 %s，首个主机实际值为 %s (--allow-server-type-mismatch)", mismatchIP, mismatchType, detectedType)
 	}
 	if lowMemoryVM && typeMismatch && allowMismatch {
-		log.Printf("[模版检测] 告警：集群存在内存低于 24G 的虚拟机且 server_type 不一致，使用 vm_l 模板 (--allow-server-type-mismatch)")
+		log.Printf("[模版检测] 告警：集群存在内存低于 %dG 的虚拟机且 server_type 不一致，使用 vm_l 模板 (--allow-server-type-mismatch)", lowMemoryVMThresholdGB)
 	}
 
 	selected, err := selectClusterServerType(detectedType, mismatchIP != "", lowMemoryVM, allowMismatch)
@@ -132,7 +132,7 @@ func resolveClusterServerType(ips []string, port int, user string, auth *hostche
 func selectClusterServerType(detectedType string, typeMismatch, lowMemoryVM, allowMismatch bool) (string, error) {
 	if lowMemoryVM {
 		if !allowMismatch || !typeMismatch {
-			return "", fmt.Errorf("集群存在虚拟机内存不足: 低于 24G；只有在 server_type 不一致并指定 --allow-server-type-mismatch 时才允许使用 vm_l 模板")
+			return "", fmt.Errorf("集群存在虚拟机内存不足: 低于 %dG；只有在 server_type 不一致并指定 --allow-server-type-mismatch 时才允许使用 vm_l 模板", lowMemoryVMThresholdGB)
 		}
 		return "vm_l", nil
 	}

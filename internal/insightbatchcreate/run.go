@@ -30,10 +30,11 @@ var (
 	requiredHeadersAlways = []string{"num", "cluster_name", "cluster_group_name", "M", "S", "TS", "LS", "OS"}
 	requiredHeaders       = []string{"num", "cluster_name", "cluster_group_name", "M", "S", "TS", "LS", "OS", "server_type"}
 	roleSequence          = []string{"M", "S", "LS", "OS", "TS"}
-	roleToTeamID          = map[string]int{"M": 1, "S": 2, "LS": 3, "OS": 4, "TS": 5}
 	roleToDBRole          = map[string]int{"M": 1, "S": 0, "TS": 0, "LS": 0, "OS": 2}
-	extraTeamIDStart      = 61
 )
+
+const maxTeamsPerCluster = 10
+const lowMemoryVMThresholdGB = 22
 
 type templateSelection struct {
 	ServerType      string `json:"server_type"`
@@ -251,7 +252,7 @@ func parseArgs(args []string) (runArgs, error) {
 	fs.BoolVar(&parsed.CaseSensitive, "case-sensitive", false, "数据库表名大小写敏感，开启后 DN 模版名附加 _lowercase_0 后缀")
 	fs.BoolVar(&parsed.IgnoreMismatch, "ignore-template-mismatch", false, "自动选择与 CSV 指定不一致时，使用自动选择的结果")
 	fs.BoolVar(&parsed.SkipCheck, "skip-template-check", false, "自动选择与 CSV 指定不一致时，使用 CSV 指定值继续执行")
-	fs.BoolVar(&parsed.AllowLowMemVM, "allow-low-memory-vm", false, "允许虚拟机内存低于24G时不报错，降级使用 vm_l 模版")
+	fs.BoolVar(&parsed.AllowLowMemVM, "allow-low-memory-vm", false, "允许虚拟机内存低于22G时不报错，降级使用 vm_l 模版")
 	fs.BoolVar(&parsed.AllowServerTypeMismatch, "allow-server-type-mismatch", false, "允许集群多个主机 server_type 不一致，仅打印告警并继续")
 	insightopen.AddAuthFlags(fs, &parsed.Auth)
 
@@ -349,6 +350,14 @@ func loadRows(path string, autoSelect bool) ([]normalizedRow, error) {
 		}
 		if len(roleIPLists["M"]) > 1 {
 			return nil, fmt.Errorf("第 %d 行 M 角色只能配置一个 IP", i+1)
+		}
+
+		ipCount := 0
+		for _, role := range roleSequence {
+			ipCount += len(roleIPLists[role])
+		}
+		if ipCount > maxTeamsPerCluster {
+			return nil, fmt.Errorf("第 %d 行集群 %s IP 数量为 %d，最多支持 %d 个 IP（每个 IP 占用一个 teamId）", i+1, clusterName, ipCount, maxTeamsPerCluster)
 		}
 
 		seenRoles := map[string]string{}
@@ -648,18 +657,15 @@ func buildDNInstallList(row normalizedRow, args runArgs) []map[string]any {
 	dataPath := installPath + "/data"
 
 	teamList := []map[string]any{}
-	nextExtraTeamID := extraTeamIDStart
+	nextTeamID := 1
 	for _, role := range roleSequence {
 		ips := roleIPList(row, role)
 		if len(ips) == 0 {
 			continue
 		}
 		for index, ip := range ips {
-			teamID := roleToTeamID[role]
-			if index > 0 {
-				teamID = nextExtraTeamID
-				nextExtraTeamID++
-			}
+			teamID := nextTeamID
+			nextTeamID++
 			dbRole := roleToDBRole[role]
 			if role == "OS" && index > 0 {
 				dbRole = 0

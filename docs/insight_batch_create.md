@@ -45,6 +45,7 @@ go run ./cmd/insight-batch-create --help
 - 多 IP 按从左到右顺序展开
 - 同一集群内各角色 IP 必须全局唯一
 - 多 IP 列表不能包含空元素，发现空元素直接报错
+- 同一集群所有角色的 IP 总数最多为 10；每个 IP 占用一个 team，超过时在 CSV 校验阶段整批报错退出（退出码 3），不进行 SSH 检测或创建请求；`--dry-run` 也执行此校验
 - 同一批次内 `cluster_name` 不能重复
 - `server_type` 仅支持：`vm_l`、`vm_m`、`vm_h`、`pm`、`vm_lowercase_0`
 - 当前仅支持 `--gtm-use-mode=1`
@@ -81,8 +82,8 @@ num,cluster_name,cluster_group_name,M,S,TS,LS,OS,server_type
 | 虚拟化类型 | 内存 MemGB | 选定 server_type |
 |-----------|-----------|-----------------|
 | 物理机 (`Virt == "none"`) | 任意 | `pm` |
-| 虚拟机 | < 24 | 默认报错；仅在类型不一致且指定 `--allow-server-type-mismatch` 时使用 `vm_l` |
-| 虚拟机 | >= 24 且 < 30 | `vm_l` |
+| 虚拟机 | < 22 | 默认报错；仅在类型不一致且指定 `--allow-server-type-mismatch` 时使用 `vm_l` |
+| 虚拟机 | >= 22 且 < 30 | `vm_l` |
 | 虚拟机 | >= 30 且 < 46 | `vm_m` |
 | 虚拟机 | >= 46 | `vm_h` |
 
@@ -92,9 +93,9 @@ num,cluster_name,cluster_group_name,M,S,TS,LS,OS,server_type
 - 任一 IP SSH 连接失败，整批退出
 - 使用 `--allow-server-type-mismatch` 时，server_type 不一致仅打印告警；以实际检测值为准，继续执行
 
-### 虚拟机内存不足 24G
+### 虚拟机内存不足 22G
 
-虚拟机内存低于 24G 时，默认仍因内存阈值报错退出。使用 `--allow-low-memory-vm` 可按原有逻辑降级为告警并使用 `vm_l`。此外，如果集群多个节点的实际 `server_type` 不一致，并指定 `--allow-server-type-mismatch`，且不一致场景包含低内存虚拟机，也可忽略该差异并使用 `vm_l` 模板继续执行。
+虚拟机内存低于 22G 时，默认仍因内存阈值报错退出。使用 `--allow-low-memory-vm` 可按原有逻辑降级为告警并使用 `vm_l`。此外，如果集群多个节点的实际 `server_type` 不一致，并指定 `--allow-server-type-mismatch`，且不一致场景包含低内存虚拟机，也可忽略该差异并使用 `vm_l` 模板继续执行。
 
 ### CSV 指定值与自动检测冲突处理
 
@@ -105,7 +106,7 @@ num,cluster_name,cluster_group_name,M,S,TS,LS,OS,server_type
 | 未指定 | 指定 | 使用 CSV 指定值 |
 | 指定 | 指定 | 两者互斥，报错退出 |
 
-启用 `--allow-server-type-mismatch` 后，实际 SSH 检测值优先于 CSV 中填写的 `server_type`；主机之间检测值不一致时打印告警，并使用首个检测主机的实际值作为集群模板基准。虚拟机内存低于 24G 时，只有在同时存在类型不一致时才允许使用 `vm_l`；其他情况仍因内存阈值报错。
+启用 `--allow-server-type-mismatch` 后，实际 SSH 检测值优先于 CSV 中填写的 `server_type`；主机之间检测值不一致时打印告警，并使用首个检测主机的实际值作为集群模板基准。虚拟机内存低于 22G 时，只有在同时存在类型不一致时才允许使用 `vm_l`；其他情况仍因内存阈值报错。
 
 ## 模版生成规则
 
@@ -156,12 +157,11 @@ DN `dbRole` 映射：
 
 DN `teamId` 映射：
 
-- `M -> 1`
-- `S -> 2`
-- `LS -> 3`
-- `OS -> 4`
-- `TS -> 5`
-- 每个角色的额外 IP 按集群内角色顺序统一从 `61` 开始递增，不按角色或 IDC 重置
+- 按角色顺序 `M -> S -> LS -> OS -> TS` 展开 IP，角色内保持 CSV 输入顺序
+- 展开后的第 N 个 IP 使用 `teamId=N`，取值范围为 `1` 到 `10`
+- 每个 IP 独占一个 team；同一集群 IP 总数超过 10 时直接报错
+- 当五个角色均存在且各有一个 IP 时，映射为 `M=1`、`S=2`、`LS=3`、`OS=4`、`TS=5`
+- 空角色不预留编号，例如仅有 M、S、OS 且各有一个 IP 时，teamId 分别为 `1`、`2`、`3`；OS 逻辑主由该角色内的 IP 顺序决定
 
 ## 常用参数
 
@@ -206,7 +206,7 @@ DN `teamId` 映射：
 | `--case-sensitive` | 数据库表名大小写敏感，开启后所有模版名附加 `_lowercase_0` | `false` |
 | `--ignore-template-mismatch` | CSV 指定与自动检测不一致时，采用自动检测结果 | `false` |
 | `--skip-template-check` | CSV 指定与自动检测不一致时，采用 CSV 指定值 | `false` |
-| `--allow-low-memory-vm` | 允许虚拟机内存低于 24G 时不报错，降级使用 `vm_l` | `false` |
+| `--allow-low-memory-vm` | 允许虚拟机内存低于 22G 时不报错，降级使用 `vm_l` | `false` |
 | `--allow-server-type-mismatch` | 允许集群主机之间 server_type 不一致，仅打印告警并继续；实际检测值优先 | `false` |
 
 鉴权说明：

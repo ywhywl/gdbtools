@@ -3,6 +3,9 @@ package insightbatchcreate
 import (
 	"bytes"
 	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -400,12 +403,12 @@ func TestBuildDNInstallListWithExpandedRoles(t *testing.T) {
 	}{
 		{1, "10.0.0.1", 1, ""},
 		{2, "10.0.0.2", 0, ""},
-		{61, "10.0.0.3", 0, ""},
+		{3, "10.0.0.3", 0, ""},
 		{4, "10.0.0.4", 2, "template_vm_l_dn_OS.json"},
-		{62, "10.0.0.5", 0, "template_vm_l_dn_OS.json"},
-		{63, "10.0.0.6", 0, "template_vm_l_dn_OS.json"},
-		{5, "10.0.0.7", 0, ""},
-		{64, "10.0.0.8", 0, ""},
+		{5, "10.0.0.5", 0, "template_vm_l_dn_OS.json"},
+		{6, "10.0.0.6", 0, "template_vm_l_dn_OS.json"},
+		{7, "10.0.0.7", 0, ""},
+		{8, "10.0.0.8", 0, ""},
 	}
 	if len(items) != len(want) {
 		t.Fatalf("team count = %d, want %d", len(items), len(want))
@@ -431,8 +434,97 @@ func TestBuildDNInstallListWithExpandedRoles(t *testing.T) {
 	}
 }
 
+func TestLoadRowsTeamLimits(t *testing.T) {
+	const header = "num,cluster_name,cluster_group_name,M,S,TS,LS,OS,server_type\n"
+	const tenIPs = "1,cluster_10,group,10.0.0.1,10.0.0.2;10.0.0.3|10.0.0.4,10.0.0.9|10.0.0.10,10.0.0.5;10.0.0.6,10.0.0.7|10.0.0.8,vm_l\n"
+	const elevenIPs = "2,cluster_11,group,10.0.0.1,10.0.0.2;10.0.0.3|10.0.0.4,10.0.0.9|10.0.0.10;10.0.0.11,10.0.0.5;10.0.0.6,10.0.0.7|10.0.0.8,vm_l\n"
+	tests := []struct {
+		name       string
+		csvRows    string
+		wantCounts []int
+		wantError  string
+	}{
+		{
+			name:       "single IP per role",
+			csvRows:    "1,cluster_5,group,10.0.0.1,10.0.0.2,10.0.0.5,10.0.0.3,10.0.0.4,vm_l\n",
+			wantCounts: []int{5},
+		},
+		{
+			name:       "missing role does not reserve a team ID",
+			csvRows:    "1,cluster_4,group,10.0.0.1,10.0.0.2,10.0.0.4,,10.0.0.3,vm_l\n",
+			wantCounts: []int{4},
+		},
+		{
+			name:       "ten IPs across roles",
+			csvRows:    tenIPs,
+			wantCounts: []int{10},
+		},
+		{
+			name:       "nine S IPs fill all remaining teams",
+			csvRows:    "1,cluster_10,group,10.0.0.1,10.0.0.2|10.0.0.3|10.0.0.4|10.0.0.5|10.0.0.6|10.0.0.7|10.0.0.8|10.0.0.9|10.0.0.10,,,,vm_l\n",
+			wantCounts: []int{10},
+		},
+		{
+			name:       "limit and numbering reset per cluster",
+			csvRows:    tenIPs + strings.ReplaceAll(tenIPs, "cluster_10", "another_cluster"),
+			wantCounts: []int{10, 10},
+		},
+		{
+			name:      "eleven IPs reject the entire batch",
+			csvRows:   tenIPs + elevenIPs,
+			wantError: "第 2 行集群 cluster_11 IP 数量为 11，最多支持 10 个 IP",
+		},
+	}
+	for _, tt := range tests {
+		for _, autoSelect := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/autoSelect=%t", tt.name, autoSelect), func(t *testing.T) {
+				path := filepath.Join(t.TempDir(), "clusters.csv")
+				if err := os.WriteFile(path, []byte(header+tt.csvRows), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				rows, err := loadRows(path, autoSelect)
+				if tt.wantError != "" {
+					if err == nil || !strings.Contains(err.Error(), tt.wantError) {
+						t.Fatalf("loadRows() error = %v, want %q", err, tt.wantError)
+					}
+					if rows != nil {
+						t.Fatal("invalid batch must not return partially validated rows")
+					}
+					return
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(rows) != len(tt.wantCounts) {
+					t.Fatalf("row count = %d, want %d", len(rows), len(tt.wantCounts))
+				}
+				for rowIndex, row := range rows {
+					payload := buildPayload(row, runArgs{Prefix: "nu", BasePath: "/data/goldendb"}, "")
+					groups := payload["dnInstallList"].([]map[string]any)
+					teams := groups[0]["teamList"].([]map[string]any)
+					if len(teams) != tt.wantCounts[rowIndex] {
+						t.Fatalf("row %d team count = %d, want %d", rowIndex, len(teams), tt.wantCounts[rowIndex])
+					}
+					for i, team := range teams {
+						if team["teamId"] != i+1 {
+							t.Errorf("team[%d].teamId = %v, want %d", i, team["teamId"], i+1)
+						}
+						dns := team["dnList"].([]map[string]any)
+						if len(dns) != 1 {
+							t.Fatalf("team[%d] DN count = %d, want 1", i, len(dns))
+						}
+						if wantIP := fmt.Sprintf("10.0.0.%d", i+1); dns[0]["ip"] != wantIP {
+							t.Errorf("team[%d] IP = %v, want %s", i, dns[0]["ip"], wantIP)
+						}
+					}
+				}
+			})
+		}
+	}
+}
+
 func TestMemToServerTypeLowMemoryErrors(t *testing.T) {
-	for _, mem := range []int{0, 1, 23} {
+	for _, mem := range []int{0, 1, 21} {
 		got, err := memToServerType(mem, "kvm", false)
 		if err == nil || got != "" {
 			t.Errorf("memToServerType(%d) = %q, %v; want error", mem, got, err)
@@ -440,8 +532,17 @@ func TestMemToServerTypeLowMemoryErrors(t *testing.T) {
 	}
 }
 
+func TestMemToServerTypeThreshold(t *testing.T) {
+	for _, mem := range []int{22, 23} {
+		got, err := memToServerType(mem, "kvm", false)
+		if err != nil || got != "vm_l" {
+			t.Errorf("memToServerType(%d) = %q, %v; want vm_l, nil", mem, got, err)
+		}
+	}
+}
+
 func TestMemToServerTypeLowMemoryCanBeAllowed(t *testing.T) {
-	got, err := memToServerType(23, "kvm", true)
+	got, err := memToServerType(21, "kvm", true)
 	if err != nil || got != "vm_l" {
 		t.Fatalf("memToServerType() = %q, %v; want vm_l, nil", got, err)
 	}
