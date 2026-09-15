@@ -22,11 +22,11 @@ go run ./cmd/insight-batch-create --help
 | `num` | 是 | 序号，仅用于结果展示 |
 | `cluster_name` | 是 | 集群名称 |
 | `cluster_group_name` | 是 | 集群分组名称，仅用于结果展示 |
-| `M` | 是 | 主节点 IP |
-| `S` | 是 | 备节点 IP |
-| `TS` | 否 | TS 角色节点 IP |
-| `LS` | 否 | LS 角色节点 IP |
-| `OS` | 否 | OS 角色节点 IP |
+| `M` | 是 | 主节点 IP，只允许一个 IP |
+| `S` | 是 | 备节点 IP，支持使用 `;` 或 `|` 配置多个 IP |
+| `TS` | 否 | TS 角色节点 IP，支持使用 `;` 或 `|` 配置多个 IP |
+| `LS` | 否 | LS 角色节点 IP，支持使用 `;` 或 `|` 配置多个 IP |
+| `OS` | 否 | OS 角色节点 IP，支持使用 `;` 或 `|` 配置多个 IP |
 | `server_type` | 否（见下方说明） | 服务器类型，用于指定预期模版 |
 
 **`server_type` 填写规则**：
@@ -40,7 +40,11 @@ go run ./cmd/insight-batch-create --help
 约束：
 
 - `M`、`S` 不能为空
-- 同一行内各角色 IP 不能重复
+- `M` 只能填写一个 IP
+- `;` 和 `|` 都表示多个 IP，含义相同，可以混用
+- 多 IP 按从左到右顺序展开
+- 同一集群内各角色 IP 必须全局唯一
+- 多 IP 列表不能包含空元素，发现空元素直接报错
 - 同一批次内 `cluster_name` 不能重复
 - `server_type` 仅支持：`vm_l`、`vm_m`、`vm_h`、`pm`、`vm_lowercase_0`
 - 当前仅支持 `--gtm-use-mode=1`
@@ -59,6 +63,15 @@ num,cluster_name,cluster_group_name,M,S,TS,LS,OS
 1,prod_cluster_full,group_a,172.27.17.25,172.27.21.156,,,172.27.21.157,
 ```
 
+示例（多 IP，`;` 和 `|` 含义相同）：
+
+```csv
+num,cluster_name,cluster_group_name,M,S,TS,LS,OS,server_type
+1,prod_cluster_multi,group_a,172.27.17.25,172.27.21.156|172.27.21.159,172.27.21.158,,172.27.21.157;172.27.21.160,vm_l
+```
+
+`M` 角色只能填写一个 IP；`S`、`TS`、`LS`、`OS` 可以填写多个 IP。所有 IP 在同一集群内必须全局唯一。
+
 ## 模版自动选择（默认开启）
 
 程序默认通过 SSH 登录各主机，采集内存和虚拟化信息后自动选择模版。
@@ -68,19 +81,20 @@ num,cluster_name,cluster_group_name,M,S,TS,LS,OS
 | 虚拟化类型 | 内存 MemGB | 选定 server_type |
 |-----------|-----------|-----------------|
 | 物理机 (`Virt == "none"`) | 任意 | `pm` |
-| 虚拟机 | < 23 | **报错退出** |
-| 虚拟机 | >= 23 且 < 30 | `vm_l` |
+| 虚拟机 | < 24 | 默认报错；仅在类型不一致且指定 `--allow-server-type-mismatch` 时使用 `vm_l` |
+| 虚拟机 | >= 24 且 < 30 | `vm_l` |
 | 虚拟机 | >= 30 且 < 46 | `vm_m` |
 | 虚拟机 | >= 46 | `vm_h` |
 
 ### 同集群多 IP 处理
 
-- 同集群所有 IP 必须检测到**相同** server_type，否则报错退出
+- 同集群所有 IP 必须检测到**相同** server_type，否则默认报错退出
 - 任一 IP SSH 连接失败，整批退出
+- 使用 `--allow-server-type-mismatch` 时，server_type 不一致仅打印告警；以实际检测值为准，继续执行
 
-### 虚拟机内存 < 24G 豁免
+### 虚拟机内存不足 24G
 
-通过 `--allow-low-memory-vm` 开关，可将 < 24G 虚拟机的"报错退出"降级为**告警日志 + 使用 vm_l 继续**。
+虚拟机内存低于 24G 时，默认仍因内存阈值报错退出。使用 `--allow-low-memory-vm` 可按原有逻辑降级为告警并使用 `vm_l`。此外，如果集群多个节点的实际 `server_type` 不一致，并指定 `--allow-server-type-mismatch`，且不一致场景包含低内存虚拟机，也可忽略该差异并使用 `vm_l` 模板继续执行。
 
 ### CSV 指定值与自动检测冲突处理
 
@@ -90,6 +104,8 @@ num,cluster_name,cluster_group_name,M,S,TS,LS,OS
 | 指定 | 未指定 | 使用自动检测结果 |
 | 未指定 | 指定 | 使用 CSV 指定值 |
 | 指定 | 指定 | 两者互斥，报错退出 |
+
+启用 `--allow-server-type-mismatch` 后，实际 SSH 检测值优先于 CSV 中填写的 `server_type`；主机之间检测值不一致时打印告警，并使用首个检测主机的实际值作为集群模板基准。虚拟机内存低于 24G 时，只有在同时存在类型不一致时才允许使用 `vm_l`；其他情况仍因内存阈值报错。
 
 ## 模版生成规则
 
@@ -115,14 +131,16 @@ num,cluster_name,cluster_group_name,M,S,TS,LS,OS
 
 CN 规则：
 
-- 每个非空角色 IP 生成两个 CN：
+- 每个非空角色 IP 生成 CN：
   - `dbproxy1`，`servicePort=3306`
   - `dbproxy2`，`servicePort=3307`
+- LS 每个 IP 只生成 `servicePort=3308` 的 CN
+- OS 每个 IP 只生成 `servicePort=3309` 的 CN
 - 安装用户为 `{prefix}dbproxy1`、`{prefix}dbproxy2`
 
 DN 规则：
 
-- 每个非空角色 IP 生成一个 DN
+- 每个 IP 生成一个 DN，并独立放入一个 team
 - 安装用户固定为 `{prefix}db1`
 - 安装路径为 `{base-path}/{prefix}db1`
 - 数据路径为 `{base-path}/{prefix}db1/data`
@@ -133,7 +151,8 @@ DN `dbRole` 映射：
 - `S -> 0`
 - `TS -> 0`
 - `LS -> 0`
-- `OS -> 2`
+- `OS` 的第一个 IP -> `2`（全局唯一逻辑主）
+- `OS` 的其他 IP -> `0`
 
 DN `teamId` 映射：
 
@@ -142,6 +161,7 @@ DN `teamId` 映射：
 - `LS -> 3`
 - `OS -> 4`
 - `TS -> 5`
+- 每个角色的额外 IP 按集群内角色顺序统一从 `61` 开始递增，不按角色或 IDC 重置
 
 ## 常用参数
 
@@ -186,7 +206,8 @@ DN `teamId` 映射：
 | `--case-sensitive` | 数据库表名大小写敏感，开启后所有模版名附加 `_lowercase_0` | `false` |
 | `--ignore-template-mismatch` | CSV 指定与自动检测不一致时，采用自动检测结果 | `false` |
 | `--skip-template-check` | CSV 指定与自动检测不一致时，采用 CSV 指定值 | `false` |
-| `--allow-low-memory-vm` | 允许虚拟机内存低于 23G 时不报错，降级使用 vm_l | `false` |
+| `--allow-low-memory-vm` | 允许虚拟机内存低于 24G 时不报错，降级使用 `vm_l` | `false` |
+| `--allow-server-type-mismatch` | 允许集群主机之间 server_type 不一致，仅打印告警并继续；实际检测值优先 | `false` |
 
 鉴权说明：
 
@@ -226,7 +247,7 @@ go run ./cmd/insight-batch-create \
   --ins-user-pwd 'plain-password'
 ```
 
-允许虚拟机内存低于 24G：
+低内存虚拟机特殊场景（需节点类型不一致）：
 
 ```bash
 go run ./cmd/insight-batch-create \
@@ -236,7 +257,7 @@ go run ./cmd/insight-batch-create \
   --csv ./clusters.csv \
   --ssh-user deploy \
   --ssh-password 'ssh-password' \
-  --allow-low-memory-vm \
+  --allow-server-type-mismatch \
   --ins-user-pwd 'plain-password'
 ```
 

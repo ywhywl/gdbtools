@@ -343,3 +343,136 @@ func TestBuildCNInstallList(t *testing.T) {
 		})
 	}
 }
+
+func TestParseRoleIPs(t *testing.T) {
+	tests := []struct {
+		name    string
+		raw     string
+		role    string
+		want    []string
+		wantErr bool
+	}{
+		{name: "pipe and semicolon are equivalent", raw: "10.0.0.1;10.0.0.2|10.0.0.3", role: "S", want: []string{"10.0.0.1", "10.0.0.2", "10.0.0.3"}},
+		{name: "single ip", raw: "10.0.0.1", role: "M", want: []string{"10.0.0.1"}},
+		{name: "M cannot have multiple ips", raw: "10.0.0.1|10.0.0.2", role: "M", wantErr: true},
+		{name: "empty item", raw: "10.0.0.1||10.0.0.2", role: "OS", wantErr: true},
+		{name: "empty group", raw: "10.0.0.1;", role: "OS", wantErr: true},
+		{name: "spaces are trimmed", raw: "10.0.0.1 | 10.0.0.2", role: "TS", want: []string{"10.0.0.1", "10.0.0.2"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseRoleIPs(tt.raw, tt.role)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("parseRoleIPs() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if tt.wantErr {
+				return
+			}
+			if len(got) != len(tt.want) {
+				t.Fatalf("parseRoleIPs() = %#v, want %#v", got, tt.want)
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Errorf("parseRoleIPs()[%d] = %q, want %q", i, got[i], tt.want[i])
+				}
+			}
+		})
+	}
+}
+
+func TestBuildDNInstallListWithExpandedRoles(t *testing.T) {
+	row := normalizedRow{
+		RoleIPLists: map[string][]string{
+			"M":  {"10.0.0.1"},
+			"S":  {"10.0.0.2", "10.0.0.3"},
+			"OS": {"10.0.0.4", "10.0.0.5", "10.0.0.6"},
+			"TS": {"10.0.0.7", "10.0.0.8"},
+		},
+		Templates: templateSelection{DnOSTemplate: "template_vm_l_dn_OS.json"},
+	}
+	items := buildDNInstallList(row, runArgs{Prefix: "nu", BasePath: "/data/goldendb"})[0]["teamList"].([]map[string]any)
+	want := []struct {
+		teamID int
+		ip     string
+		dbRole int
+		tpl    string
+	}{
+		{1, "10.0.0.1", 1, ""},
+		{2, "10.0.0.2", 0, ""},
+		{61, "10.0.0.3", 0, ""},
+		{4, "10.0.0.4", 2, "template_vm_l_dn_OS.json"},
+		{62, "10.0.0.5", 0, "template_vm_l_dn_OS.json"},
+		{63, "10.0.0.6", 0, "template_vm_l_dn_OS.json"},
+		{5, "10.0.0.7", 0, ""},
+		{64, "10.0.0.8", 0, ""},
+	}
+	if len(items) != len(want) {
+		t.Fatalf("team count = %d, want %d", len(items), len(want))
+	}
+	for i, item := range items {
+		if got := item["teamId"]; got != want[i].teamID {
+			t.Errorf("team[%d] teamId = %v, want %d", i, got, want[i].teamID)
+		}
+		dn := item["dnList"].([]map[string]any)[0]
+		if got := dn["ip"]; got != want[i].ip {
+			t.Errorf("team[%d] ip = %v, want %s", i, got, want[i].ip)
+		}
+		if got := dn["dbRole"]; got != want[i].dbRole {
+			t.Errorf("team[%d] dbRole = %v, want %d", i, got, want[i].dbRole)
+		}
+		if want[i].tpl == "" {
+			if _, ok := dn["templateName"]; ok {
+				t.Errorf("team[%d] unexpected templateName", i)
+			}
+		} else if got := dn["templateName"]; got != want[i].tpl {
+			t.Errorf("team[%d] templateName = %v, want %s", i, got, want[i].tpl)
+		}
+	}
+}
+
+func TestMemToServerTypeLowMemoryErrors(t *testing.T) {
+	for _, mem := range []int{0, 1, 23} {
+		got, err := memToServerType(mem, "kvm", false)
+		if err == nil || got != "" {
+			t.Errorf("memToServerType(%d) = %q, %v; want error", mem, got, err)
+		}
+	}
+}
+
+func TestMemToServerTypeLowMemoryCanBeAllowed(t *testing.T) {
+	got, err := memToServerType(23, "kvm", true)
+	if err != nil || got != "vm_l" {
+		t.Fatalf("memToServerType() = %q, %v; want vm_l, nil", got, err)
+	}
+}
+
+func TestSelectClusterServerType(t *testing.T) {
+	tests := []struct {
+		name      string
+		typeName  string
+		mismatch  bool
+		lowMemory bool
+		allow     bool
+		want      string
+		wantErr   bool
+	}{
+		{name: "low memory without mismatch remains an error", typeName: "vm_l", lowMemory: true, allow: true, wantErr: true},
+		{name: "low memory with mismatch uses vm_l", typeName: "vm_m", mismatch: true, lowMemory: true, allow: true, want: "vm_l"},
+		{name: "low memory mismatch without allow is an error", typeName: "vm_m", mismatch: true, lowMemory: true, wantErr: true},
+		{name: "normal mismatch with allow uses actual baseline", typeName: "vm_m", mismatch: true, allow: true, want: "vm_m"},
+		{name: "normal mismatch without allow is an error", typeName: "vm_m", mismatch: true, wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := selectClusterServerType(tt.typeName, tt.mismatch, tt.lowMemory, tt.allow)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("selectClusterServerType() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if !tt.wantErr && got != tt.want {
+				t.Errorf("selectClusterServerType() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

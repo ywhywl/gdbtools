@@ -32,6 +32,7 @@ var (
 	roleSequence          = []string{"M", "S", "LS", "OS", "TS"}
 	roleToTeamID          = map[string]int{"M": 1, "S": 2, "LS": 3, "OS": 4, "TS": 5}
 	roleToDBRole          = map[string]int{"M": 1, "S": 0, "TS": 0, "LS": 0, "OS": 2}
+	extraTeamIDStart      = 61
 )
 
 type templateSelection struct {
@@ -52,6 +53,7 @@ type normalizedRow struct {
 	ClusterName      string
 	ClusterGroupName string
 	RoleIPs          map[string]string
+	RoleIPLists      map[string][]string
 	ServerType       string
 	CSVServerType    string // CSV-specified value, "" when auto-selected
 	Templates        templateSelection
@@ -80,17 +82,18 @@ type runArgs struct {
 	Output         string
 	Format         string
 	// Template auto-selection
-	AutoSelect     bool
-	SSHUser        string
-	SSHKey         string
-	SSHPassword    string
-	SSHPasswordB64 string
-	SSHPort        int
-	SSHTimeout     int
-	CaseSensitive  bool
-	IgnoreMismatch bool
-	SkipCheck      bool
-	AllowLowMemVM  bool
+	AutoSelect              bool
+	SSHUser                 string
+	SSHKey                  string
+	SSHPassword             string
+	SSHPasswordB64          string
+	SSHPort                 int
+	SSHTimeout              int
+	CaseSensitive           bool
+	IgnoreMismatch          bool
+	SkipCheck               bool
+	AllowLowMemVM           bool
+	AllowServerTypeMismatch bool
 }
 
 type clusterProgress struct {
@@ -249,6 +252,7 @@ func parseArgs(args []string) (runArgs, error) {
 	fs.BoolVar(&parsed.IgnoreMismatch, "ignore-template-mismatch", false, "自动选择与 CSV 指定不一致时，使用自动选择的结果")
 	fs.BoolVar(&parsed.SkipCheck, "skip-template-check", false, "自动选择与 CSV 指定不一致时，使用 CSV 指定值继续执行")
 	fs.BoolVar(&parsed.AllowLowMemVM, "allow-low-memory-vm", false, "允许虚拟机内存低于24G时不报错，降级使用 vm_l 模版")
+	fs.BoolVar(&parsed.AllowServerTypeMismatch, "allow-server-type-mismatch", false, "允许集群多个主机 server_type 不一致，仅打印告警并继续")
 	insightopen.AddAuthFlags(fs, &parsed.Auth)
 
 	verifySSL := false
@@ -273,6 +277,9 @@ func parseArgs(args []string) (runArgs, error) {
 	}
 	if parsed.IgnoreMismatch && parsed.SkipCheck {
 		return parsed, fmt.Errorf("--ignore-template-mismatch 和 --skip-template-check 不能同时指定")
+	}
+	if parsed.AllowServerTypeMismatch && parsed.SkipCheck {
+		return parsed, fmt.Errorf("--allow-server-type-mismatch 和 --skip-template-check 不能同时指定")
 	}
 	return parsed, nil
 }
@@ -327,23 +334,31 @@ func loadRows(path string, autoSelect bool) ([]normalizedRow, error) {
 		clusterNames[clusterName] = struct{}{}
 
 		roleIPs := map[string]string{}
+		roleIPLists := map[string][]string{}
 		for _, role := range roleSequence {
-			roleIPs[role] = strings.TrimSpace(row[role])
+			raw := strings.TrimSpace(row[role])
+			ips, err := parseRoleIPs(raw, role)
+			if err != nil {
+				return nil, fmt.Errorf("第 %d 行 %s: %w", i+1, role, err)
+			}
+			roleIPs[role] = raw
+			roleIPLists[role] = ips
 		}
-		if roleIPs["M"] == "" || roleIPs["S"] == "" {
+		if len(roleIPLists["M"]) == 0 || len(roleIPLists["S"]) == 0 {
 			return nil, fmt.Errorf("第 %d 行 M/S 不能为空", i+1)
 		}
+		if len(roleIPLists["M"]) > 1 {
+			return nil, fmt.Errorf("第 %d 行 M 角色只能配置一个 IP", i+1)
+		}
 
-		seenIPs := map[string]struct{}{}
+		seenRoles := map[string]string{}
 		for _, role := range roleSequence {
-			ip := roleIPs[role]
-			if ip == "" {
-				continue
+			for _, ip := range roleIPLists[role] {
+				if previousRole, ok := seenRoles[ip]; ok {
+					return nil, fmt.Errorf("第 %d 行 IP 重复: %s（角色 %s 和 %s）", i+1, ip, previousRole, role)
+				}
+				seenRoles[ip] = role
 			}
-			if _, ok := seenIPs[ip]; ok {
-				return nil, fmt.Errorf("第 %d 行 IP 重复: %s", i+1, ip)
-			}
-			seenIPs[ip] = struct{}{}
 		}
 
 		serverType := strings.TrimSpace(row["server_type"])
@@ -368,12 +383,49 @@ func loadRows(path string, autoSelect bool) ([]normalizedRow, error) {
 			ClusterName:      clusterName,
 			ClusterGroupName: strings.TrimSpace(row["cluster_group_name"]),
 			RoleIPs:          roleIPs,
+			RoleIPLists:      roleIPLists,
 			ServerType:       serverType,
 			CSVServerType:    csvServerType,
 			Templates:        templates,
 		})
 	}
 	return rows, nil
+}
+
+// parseRoleIPs parses a role value. Both ';' and '|' are equivalent separators.
+// Empty elements are invalid. M is intentionally limited to one IP.
+func parseRoleIPs(raw, role string) ([]string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	if role == "M" && strings.ContainsAny(raw, ";|") {
+		return nil, fmt.Errorf("M 角色只能配置一个 IP，不能使用 ; 或 | 扩展")
+	}
+
+	parts := strings.FieldsFunc(raw, func(r rune) bool { return r == ';' || r == '|' })
+	separatorCount := strings.Count(raw, ";") + strings.Count(raw, "|")
+	if separatorCount > 0 && len(parts) != separatorCount+1 {
+		return nil, fmt.Errorf("IP 列表包含空元素")
+	}
+
+	ips := make([]string, 0, len(parts))
+	for _, part := range parts {
+		ip := strings.TrimSpace(part)
+		if ip == "" {
+			return nil, fmt.Errorf("IP 列表包含空元素")
+		}
+		ips = append(ips, ip)
+	}
+	return ips, nil
+}
+
+func roleIPList(row normalizedRow, role string) []string {
+	if row.RoleIPLists != nil {
+		return row.RoleIPLists[role]
+	}
+	ips, _ := parseRoleIPs(row.RoleIPs[role], role)
+	return ips
 }
 
 // applyAutoSelect performs SSH-based template detection for each cluster,
@@ -394,17 +446,19 @@ func applyAutoSelect(rows []normalizedRow, args runArgs) ([]normalizedRow, error
 
 	// Collect unique IPs per cluster (only non-empty IPs).
 	clusterIPs := make(map[string][]string)
-	clusterRows := make(map[string][]int) // clusterName -> row indices
-	for i, row := range rows {
+	for _, row := range rows {
 		var ips []string
+		seen := map[string]struct{}{}
 		for _, role := range roleSequence {
-			ip := row.RoleIPs[role]
-			if ip != "" {
+			for _, ip := range roleIPList(row, role) {
+				if _, ok := seen[ip]; ok {
+					continue
+				}
+				seen[ip] = struct{}{}
 				ips = append(ips, ip)
 			}
 		}
 		clusterIPs[row.ClusterName] = ips
-		clusterRows[row.ClusterName] = append(clusterRows[row.ClusterName], i)
 	}
 
 	// SSH detect server_type per cluster.
@@ -416,7 +470,7 @@ func applyAutoSelect(rows []normalizedRow, args runArgs) ([]normalizedRow, error
 			return nil, fmt.Errorf("集群 %s 无任何有效 IP 地址", name)
 		}
 		log.Printf("[模版检测] 集群 %s: 正在通过 SSH 检测 %d 台主机...", name, len(ips))
-		st, err := resolveClusterServerType(ips, args.SSHPort, args.SSHUser, sshAuth, sshTimeout, args.AllowLowMemVM)
+		st, err := resolveClusterServerType(ips, args.SSHPort, args.SSHUser, sshAuth, sshTimeout, args.AllowLowMemVM, args.AllowServerTypeMismatch)
 		if err != nil {
 			return nil, fmt.Errorf("集群 %s 模版检测失败: %w", name, err)
 		}
@@ -428,6 +482,19 @@ func applyAutoSelect(rows []normalizedRow, args runArgs) ([]normalizedRow, error
 	for i, row := range rows {
 		detected := clusterDetected[row.ClusterName]
 		csvVal := row.CSVServerType
+
+		if args.AllowServerTypeMismatch {
+			if csvVal != "" && csvVal != detected {
+				log.Printf("[模版检测] 集群 %s: CSV 指定 %s，实际检测基准为 %s — 使用实际检测值 (--allow-server-type-mismatch)", row.ClusterName, csvVal, detected)
+			}
+			templates, err := resolveTemplates(detected, args.CaseSensitive)
+			if err != nil {
+				return nil, err
+			}
+			rows[i].ServerType = detected
+			rows[i].Templates = templates
+			continue
+		}
 
 		if csvVal == "" || detected == csvVal {
 			// No conflict: update row with detected type.
@@ -529,12 +596,11 @@ func buildPayload(row normalizedRow, args runArgs, passwordB64 string) map[strin
 func buildCNInstallList(row normalizedRow, args runArgs) []map[string]any {
 	items := []map[string]any{}
 	for _, role := range roleSequence {
-		ip := row.RoleIPs[role]
-		if ip == "" {
+		ips := roleIPList(row, role)
+		if len(ips) == 0 {
 			continue
 		}
 
-		// 根据角色确定端口配置
 		var ports []struct {
 			Suffix      int
 			ServicePort int
@@ -561,15 +627,16 @@ func buildCNInstallList(row normalizedRow, args runArgs) []map[string]any {
 			}{{1, 3306}, {2, 3307}}
 		}
 
-		// 为每个端口创建安装项
-		for _, port := range ports {
-			installUser := fmt.Sprintf("%sdbproxy%d", args.Prefix, port.Suffix)
-			items = append(items, map[string]any{
-				"ip":          ip,
-				"installPath": fmt.Sprintf("%s/%s", args.BasePath, installUser),
-				"installUser": installUser,
-				"servicePort": port.ServicePort,
-			})
+		for _, ip := range ips {
+			for _, port := range ports {
+				installUser := fmt.Sprintf("%sdbproxy%d", args.Prefix, port.Suffix)
+				items = append(items, map[string]any{
+					"ip":          ip,
+					"installPath": fmt.Sprintf("%s/%s", args.BasePath, installUser),
+					"installUser": installUser,
+					"servicePort": port.ServicePort,
+				})
+			}
 		}
 	}
 	return items
@@ -581,21 +648,37 @@ func buildDNInstallList(row normalizedRow, args runArgs) []map[string]any {
 	dataPath := installPath + "/data"
 
 	teamList := []map[string]any{}
+	nextExtraTeamID := extraTeamIDStart
 	for _, role := range roleSequence {
-		ip := row.RoleIPs[role]
-		if ip == "" {
+		ips := roleIPList(row, role)
+		if len(ips) == 0 {
 			continue
 		}
-		teamList = append(teamList, map[string]any{
-			"teamId": roleToTeamID[role],
-			"dnList": []map[string]any{{
+		for index, ip := range ips {
+			teamID := roleToTeamID[role]
+			if index > 0 {
+				teamID = nextExtraTeamID
+				nextExtraTeamID++
+			}
+			dbRole := roleToDBRole[role]
+			if role == "OS" && index > 0 {
+				dbRole = 0
+			}
+			dnItem := map[string]any{
 				"ip":          ip,
-				"dbRole":      roleToDBRole[role],
+				"dbRole":      dbRole,
 				"installPath": installPath,
 				"installUser": installUser,
 				"dataPath":    dataPath,
-			}},
-		})
+			}
+			if role == "OS" {
+				dnItem["templateName"] = row.Templates.DnOSTemplate
+			}
+			teamList = append(teamList, map[string]any{
+				"teamId": teamID,
+				"dnList": []map[string]any{dnItem},
+			})
+		}
 	}
 	return []map[string]any{{
 		"dbgroupId": 1,
