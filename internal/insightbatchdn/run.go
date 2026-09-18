@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ywhywl/gdbtools/internal/insightcomponent"
 	"github.com/ywhywl/gdbtools/internal/insightinput"
 	"github.com/ywhywl/gdbtools/internal/insightopen"
 )
@@ -28,6 +29,10 @@ type args struct {
 	PollTimeout        int
 	VerifySSL          bool
 	OutputJSON         bool
+	Debug              bool
+	Prefix             string
+	BasePath           string
+	CaseSensitive      bool
 }
 
 type dnRow struct {
@@ -74,10 +79,15 @@ func Run(argv []string) (int, error) {
 	fs.IntVar(&parsed.PollTimeout, "poll-timeout", 3600, "轮询超时")
 	fs.BoolVar(&parsed.VerifySSL, "verify-ssl", false, "启用 SSL 证书校验；默认关闭")
 	fs.BoolVar(&parsed.OutputJSON, "output-json", false, "输出 JSON")
+	fs.BoolVar(&parsed.Debug, "debug", false, "打印请求和响应的 debug 日志；默认关闭")
+	fs.StringVar(&parsed.Prefix, "prefix", "nu", "自动生成安装用户名的前缀")
+	fs.StringVar(&parsed.BasePath, "base-path", "/data/goldendb", "自动生成安装路径的根目录")
+	fs.BoolVar(&parsed.CaseSensitive, "case-sensitive", false, "使用大小写敏感模板名")
 	insightopen.AddAuthFlags(fs, &parsed.Auth)
 	if err := fs.Parse(argv); err != nil {
 		return 2, err
 	}
+	insightopen.SetDebug(parsed.Debug)
 	if strings.TrimSpace(parsed.Input) == "" {
 		return 2, fmt.Errorf("--input is required")
 	}
@@ -172,19 +182,46 @@ func normalizeDNRows(rows []map[string]string, args args) ([]dnRow, error) {
 	for i, row := range rows {
 		api := strings.TrimSpace(row["insight_addr"])
 		cluster := strings.TrimSpace(row["cluster_name"])
-		template := strings.TrimSpace(row["template_name"])
+		template, err := insightcomponent.ComponentTemplateName(row["template_name"], row["server_type"], "dn", args.CaseSensitive)
+		if err != nil {
+			return nil, fmt.Errorf("第 %d 行: %w", i+1, err)
+		}
 		ip := strings.TrimSpace(row["ip"])
 		dbgroupName := strings.TrimSpace(row["dbgroup_name"])
 		dbgroupID := strings.TrimSpace(row["dbgroup_id"])
-		if api == "" || cluster == "" || template == "" || ip == "" {
+		if api == "" || cluster == "" || ip == "" {
 			return nil, fmt.Errorf("第 %d 行缺少必填字段 insight_addr/cluster_name/template_name/ip", i+1)
 		}
 		if dbgroupName == "" && dbgroupID == "" {
 			return nil, fmt.Errorf("第 %d 行缺少 dbgroup_name 或 dbgroup_id", i+1)
 		}
+		teamID := strings.TrimSpace(row["team_id"])
+		if teamID == "" {
+			return nil, fmt.Errorf("第 %d 行缺少 team_id；新增 DN 的 teamId 必须人工指定", i+1)
+		}
+		teamNumber, err := strconv.Atoi(teamID)
+		if err != nil || teamNumber < 1 {
+			return nil, fmt.Errorf("第 %d 行 team_id 无效: %s", i+1, teamID)
+		}
 		apiBase, err := insightopen.NormalizeAPIBase(api)
 		if err != nil {
 			return nil, err
+		}
+		installUser := firstNonEmpty(strings.TrimSpace(row["install_user"]), args.DefaultInstallUser)
+		if installUser == "" {
+			installUser = insightcomponent.DefaultDNInstallUser(args.Prefix)
+		}
+		installPath := firstNonEmpty(strings.TrimSpace(row["install_path"]), args.DefaultInstallPath)
+		if installPath == "" {
+			installPath = insightcomponent.InstallPath(args.BasePath, installUser)
+		}
+		dataPath := firstNonEmpty(strings.TrimSpace(row["data_path"]), args.DefaultDataPath)
+		if dataPath == "" {
+			dataPath = strings.TrimRight(installPath, "/") + "/data"
+		}
+		logPath := firstNonEmpty(strings.TrimSpace(row["log_path"]), args.DefaultLogPath)
+		if logPath == "" {
+			logPath = strings.TrimRight(installPath, "/") + "/log"
 		}
 		out = append(out, dnRow{
 			RowNo:                i + 1,
@@ -193,7 +230,7 @@ func normalizeDNRows(rows []map[string]string, args args) ([]dnRow, error) {
 			TemplateName:         template,
 			DBGroupName:          dbgroupName,
 			DBGroupID:            dbgroupID,
-			TeamID:               strings.TrimSpace(row["team_id"]),
+			TeamID:               teamID,
 			IP:                   ip,
 			Port:                 firstNonEmpty(strings.TrimSpace(row["port"]), args.DefaultPort),
 			BackupSelectStrategy: strings.TrimSpace(row["backup_select_strategy"]),
@@ -201,10 +238,10 @@ func normalizeDNRows(rows []map[string]string, args args) ([]dnRow, error) {
 			BackupEndTime:        strings.TrimSpace(row["backup_end_time"]),
 			BackupID:             strings.TrimSpace(row["backup_id"]),
 			AdminPort:            firstNonEmpty(strings.TrimSpace(row["admin_port"]), args.DefaultAdminPort),
-			InstallUser:          firstNonEmpty(strings.TrimSpace(row["install_user"]), args.DefaultInstallUser),
-			InstallPath:          firstNonEmpty(strings.TrimSpace(row["install_path"]), args.DefaultInstallPath),
-			DataPath:             firstNonEmpty(strings.TrimSpace(row["data_path"]), args.DefaultDataPath),
-			LogPath:              firstNonEmpty(strings.TrimSpace(row["log_path"]), args.DefaultLogPath),
+			InstallUser:          installUser,
+			InstallPath:          installPath,
+			DataPath:             dataPath,
+			LogPath:              logPath,
 		})
 	}
 	return out, nil

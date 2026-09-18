@@ -34,6 +34,17 @@ func NormalizeAPIBase(api string) (string, error) {
 	return scheme + "://" + parsed.Host, nil
 }
 
+// NormalizeParameterTemplateName returns the template file name expected by
+// the Insight install APIs. The API examples use JSON file names, while some
+// older input files contain the same name without the .json suffix.
+func NormalizeParameterTemplateName(name string) string {
+	name = strings.TrimSpace(name)
+	if name != "" && !strings.HasSuffix(strings.ToLower(name), ".json") {
+		return name + ".json"
+	}
+	return name
+}
+
 func DecodeData[T any](resp APIResponse) (T, error) {
 	var out T
 	if len(resp.Data) == 0 || string(resp.Data) == "null" {

@@ -30,8 +30,10 @@ go run ./cmd/insight-batch-add-dn --help
 | --- | --- | --- |
 | `insight_addr` | 是 | Insight 地址 |
 | `cluster_name` | 是 | 集群名称 |
-| `template_name` | 是 | DN 模板名 |
+| `template_name` | 与 `server_type` 二选一 | DN 模板文件名，例如 `template_vm_l_dn.json`；未填写 `.json` 时命令会自动补齐 |
+| `server_type` | 与 `template_name` 二选一 | `pm`、`vm_l`、`vm_m`、`vm_h`、`vm_lowercase_0`；用于自动生成模板名 |
 | `ip` | 是 | DN 所在主机 IP |
+| `team_id` | 是 | 目标 team ID，必须人工指定 |
 
 以下两者至少提供一个：
 
@@ -40,7 +42,6 @@ go run ./cmd/insight-batch-add-dn --help
 
 可选字段：
 
-- `team_id`
 - `port`
 - `backup_select_strategy`
 - `backup_start_time`
@@ -56,7 +57,7 @@ CSV 示例：
 
 ```csv
 insight_addr,cluster_name,template_name,dbgroup_name,team_id,ip,port,admin_port,install_user,install_path,data_path,log_path
-10.0.0.10:8444,prod_cluster_a,template_vm_l_dn,group_1,1,10.0.0.41,0,5501,nudb1,/data/goldendb/nudb1,/data/goldendb/nudb1/data,/data/goldendb/nudb1/log
+10.0.0.10:8444,prod_cluster_a,template_vm_l_dn.json,group_1,1,10.0.0.41,,5501,nudb1,/data/goldendb/nudb1,/data/goldendb/nudb1/data,/data/goldendb/nudb1/log
 ```
 
 ## 参数说明
@@ -73,17 +74,23 @@ insight_addr,cluster_name,template_name,dbgroup_name,team_id,ip,port,admin_port,
 | `--default-install-path` | 默认安装路径 |
 | `--default-data-path` | 默认数据路径 |
 | `--default-log-path` | 默认日志路径 |
+| `--prefix` | 自动生成安装用户名的前缀，默认 `nu` |
+| `--base-path` | 自动生成安装路径的根目录，默认 `/data/goldendb` |
+| `--case-sensitive` | 自动生成大小写敏感模板名 |
 | `--poll-interval` | 轮询间隔秒数，默认 `10` |
 | `--poll-timeout` | 轮询超时秒数，默认 `3600` |
 | `--verify-ssl` | 启用 SSL 证书校验，默认关闭 |
 | `--output-json` | 输出 JSON |
+| `--debug` | 打印实际请求 URL、请求体和响应的 debug 日志，默认关闭 |
 
 说明：
 
 - 所有请求头统一带 `username/password`
 - `password` 取 Insight 登录密码的 base64
 - 若未提供 `dbgroup_id`，命令会使用 `dbgroup_name` 查询并回填
+- `team_id` 必须人工指定，程序不会自动分配
 - 相同 `dbgroup_id + team_id + backupTask` 的行会被合并到同一个 `teamList` 项中
+- `install_path` 未提供时默认为 `{base-path}/{install_user}`；`data_path` 默认为 `{install_path}/data`；`log_path` 默认为 `{install_path}/log`
 
 ## backupTask 组装规则
 
@@ -108,8 +115,17 @@ go run ./cmd/insight-batch-add-dn \
   --insight-user admin \
   --insight-password 'insight-password' \
   --default-admin-port 5501 \
+  --debug \
   --output-json
 ```
+
+`--debug` 的日志输出到 stderr，可用于和内网接口文档或抓包结果逐字段对比。请求体中的 `parameterTemplateInfos` 应类似：
+
+```json
+"parameterTemplateInfos": [{"type": "DN", "templateName": "template_vm_l_dn.json"}]
+```
+
+接口文档示例要求 `templateName` 是模板文件名并带 `.json`；`insight-batch-create` 也会生成 `template_vm_l_dn.json`。旧 CSV 若填写 `template_vm_l_dn`，命令会在发请求前自动补齐 `.json`。
 
 ## 输出结果
 

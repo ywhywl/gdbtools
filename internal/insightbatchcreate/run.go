@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/ywhywl/gdbtools/internal/hostchecker"
+	"github.com/ywhywl/gdbtools/internal/insightcomponent"
 	"github.com/ywhywl/gdbtools/internal/insightinput"
 	"github.com/ywhywl/gdbtools/internal/insightopen"
 )
@@ -553,21 +554,45 @@ func resolveTemplates(serverType string, caseSensitive bool) (templateSelection,
 		return templateSelection{}, fmt.Errorf("不支持的 server_type: %s，当前仅支持 pm, vm_h, vm_l, vm_lowercase_0, vm_m", normalized)
 	}
 
-	suffix := ""
-	if caseSensitive {
-		suffix = "_lowercase_0"
+	globalTemplate, err := insightcomponent.ComponentTemplateName("", normalized, "cluster", caseSensitive)
+	if err != nil {
+		return templateSelection{}, err
+	}
+	dnTemplate, err := insightcomponent.ComponentTemplateName("", normalized, "dn", caseSensitive)
+	if err != nil {
+		return templateSelection{}, err
+	}
+	cnTemplate, err := insightcomponent.ComponentTemplateName("", normalized, "cn", caseSensitive)
+	if err != nil {
+		return templateSelection{}, err
+	}
+	gtmTemplate, err := insightcomponent.ComponentTemplateName("", normalized, "gtm", caseSensitive)
+	if err != nil {
+		return templateSelection{}, err
+	}
+	ldsTemplate, err := insightcomponent.ComponentTemplateName("", normalized, "lds", caseSensitive)
+	if err != nil {
+		return templateSelection{}, err
+	}
+	systemTemplate, err := insightcomponent.ComponentTemplateName("", normalized, "system", caseSensitive)
+	if err != nil {
+		return templateSelection{}, err
+	}
+	dnOSTemplate, err := insightcomponent.ComponentTemplateName("", normalized, "dn_OS", caseSensitive)
+	if err != nil {
+		return templateSelection{}, err
 	}
 
 	return templateSelection{
 		ServerType:      normalized,
-		GlobalTemplate:  fmt.Sprintf("template_%s_cluster.json", normalized+suffix),
-		DNTemplate:      fmt.Sprintf("template_%s_dn.json", normalized+suffix),
-		CNTemplate:      fmt.Sprintf("template_%s_cn.json", normalized+suffix),
-		ClusterTemplate: fmt.Sprintf("template_%s_cluster.json", normalized+suffix),
-		GTMTemplate:     fmt.Sprintf("template_%s_gtm.json", normalized+suffix),
-		LDSTemplate:     fmt.Sprintf("template_%s_lds.json", normalized+suffix),
-		SystemTemplate:  fmt.Sprintf("template_%s_system.json", normalized+suffix),
-		DnOSTemplate:    fmt.Sprintf("template_%s_dn_OS.json", normalized+suffix),
+		GlobalTemplate:  globalTemplate,
+		DNTemplate:      dnTemplate,
+		CNTemplate:      cnTemplate,
+		ClusterTemplate: globalTemplate,
+		GTMTemplate:     gtmTemplate,
+		LDSTemplate:     ldsTemplate,
+		SystemTemplate:  systemTemplate,
+		DnOSTemplate:    dnOSTemplate,
 	}, nil
 }
 
@@ -609,41 +634,19 @@ func buildCNInstallList(row normalizedRow, args runArgs) []map[string]any {
 		if len(ips) == 0 {
 			continue
 		}
-
-		var ports []struct {
-			Suffix      int
-			ServicePort int
-		}
-
-		switch role {
-		case "LS":
-			// LS 只有 3308 端口，用户名从 nudbproxy1 开始
-			ports = []struct {
-				Suffix      int
-				ServicePort int
-			}{{1, 3308}}
-		case "OS":
-			// OS 只有 3309 端口，用户名从 nudbproxy1 开始
-			ports = []struct {
-				Suffix      int
-				ServicePort int
-			}{{1, 3309}}
-		default:
-			// M, S, TS 有 3306 和 3307 端口
-			ports = []struct {
-				Suffix      int
-				ServicePort int
-			}{{1, 3306}, {2, 3307}}
+		ports, err := insightcomponent.DefaultCNServicePorts(role)
+		if err != nil {
+			continue
 		}
 
 		for _, ip := range ips {
-			for _, port := range ports {
-				installUser := fmt.Sprintf("%sdbproxy%d", args.Prefix, port.Suffix)
+			for _, servicePort := range ports {
+				installUser, _ := insightcomponent.CNInstallUser(args.Prefix, servicePort)
 				items = append(items, map[string]any{
 					"ip":          ip,
-					"installPath": fmt.Sprintf("%s/%s", args.BasePath, installUser),
+					"installPath": insightcomponent.InstallPath(args.BasePath, installUser),
 					"installUser": installUser,
-					"servicePort": port.ServicePort,
+					"servicePort": servicePort,
 				})
 			}
 		}
@@ -652,8 +655,8 @@ func buildCNInstallList(row normalizedRow, args runArgs) []map[string]any {
 }
 
 func buildDNInstallList(row normalizedRow, args runArgs) []map[string]any {
-	installUser := fmt.Sprintf("%sdb1", args.Prefix)
-	installPath := fmt.Sprintf("%s/%s", args.BasePath, installUser)
+	installUser := insightcomponent.DefaultDNInstallUser(args.Prefix)
+	installPath := insightcomponent.InstallPath(args.BasePath, installUser)
 	dataPath := installPath + "/data"
 
 	teamList := []map[string]any{}
