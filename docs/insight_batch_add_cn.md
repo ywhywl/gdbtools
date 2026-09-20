@@ -21,7 +21,7 @@ go run ./cmd/insight-batch-add-cn --help
 
 ## 输入格式
 
-支持 `CSV` 和 `JSON`。
+支持 `CSV` 和 `JSON`。CSV 文件首行可使用逗号、制表符、分号或竖线作为分隔符，程序会自动识别。
 
 必填字段：
 
@@ -41,13 +41,65 @@ go run ./cmd/insight-batch-add-cn --help
 | `install_path` | 安装路径 |
 | `service_port` | 服务端口，可用 `3306;3307` 或 `3306|3307` 指定多个 |
 
-CSV 示例：
+### CSV 格式一：最小字段，按 role 自动生成端口
+
+`role` 为空时无法自动推导 `service_port`；如果不填写端口，建议填写 `role`。
+
+```csv
+insight_addr,cluster_name,role,ip
+10.0.0.10:8444,prod_cluster_a,M,10.0.0.31
+10.0.0.10:8444,prod_cluster_a,LS,10.0.0.32
+10.0.0.10:8444,prod_cluster_a,OS,10.0.0.33
+```
+
+端口推导结果分别为 `M=3306、3307`、`LS=3308`、`OS=3309`，每个端口会生成一个 CN 节点。
+
+### CSV 格式二：逗号分隔，人工指定一个或多个端口
+
+行内字段优先于命令行默认值。`service_port` 支持使用 `;` 或 `|` 分隔多个端口：
 
 ```csv
 insight_addr,cluster_name,role,ip,port,install_user,install_path,service_port
-10.0.0.10:8444,prod_cluster_a,M,10.0.0.31,,,,3306;3307
-10.0.0.10:8444,prod_cluster_a,M,10.0.0.32,,,,
+10.0.0.10:8444,prod_cluster_a,M,10.0.0.31,22,,,3306;3307
+10.0.0.10:8444,prod_cluster_a,LS,10.0.0.32,22,custom_cn,/data/goldendb/custom_cn,3308
+10.0.0.10:8444,prod_cluster_a,OS,10.0.0.33,22,,,3309
+10.0.0.10:8444,prod_cluster_a,,10.0.0.34,22,custom_cn_3310,/data/goldendb/custom_cn_3310,3310
 ```
+
+一行填写多个端口时会展开为多个 CN 节点；端口顺序按输入顺序保留。非标准端口必须同时填写 `install_user`。
+
+最后一行未填写 `role`，因此可以直接指定非标准端口；如果填写了 `role` 但端口与角色不匹配，还需要增加 `--allow-role-port-mismatch`。
+
+### CSV 格式三：分号分隔
+
+分号也可以作为 CSV 列分隔符；此时多端口值建议使用竖线，避免与列分隔符混淆：
+
+```csv
+insight_addr;cluster_name;role;ip;port;install_user;install_path;service_port
+10.0.0.10:8444;prod_cluster_a;M;10.0.0.41;22;;;3306|3307
+10.0.0.10:8444;prod_cluster_a;OS;10.0.0.42;22;;;3309
+```
+
+### CSV 格式四：竖线分隔
+
+竖线可以作为 CSV 列分隔符；此时多端口值使用分号：
+
+```csv
+insight_addr|cluster_name|role|ip|port|install_user|install_path|service_port
+10.0.0.10:8444|prod_cluster_a|M|10.0.0.51|22|||3306;3307
+10.0.0.10:8444|prod_cluster_a||10.0.0.52|22|custom_cn|/data/goldendb/custom_cn|3310
+```
+
+### CSV 格式五：完整字段与引号
+
+字段值包含当前 CSV 分隔符时，使用标准 CSV 双引号。例如逗号分隔的文件中，`service_port` 可写成带引号的多端口值：
+
+```csv
+insight_addr,cluster_name,role,ip,port,install_user,install_path,service_port
+10.0.0.10:8444,prod_cluster_a,M,10.0.0.61,22,,,"3306;3307"
+```
+
+`template_name` 和 `server_type` 即使出现在 CSV 中也会被忽略；CN 接口请求不再发送 `parameterTemplateInfos`。
 
 ## 参数说明
 

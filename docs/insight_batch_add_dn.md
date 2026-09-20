@@ -22,7 +22,7 @@ go run ./cmd/insight-batch-add-dn --help
 
 ## 输入格式
 
-支持 `CSV` 和 `JSON`。
+支持 `CSV` 和 `JSON`。CSV 文件首行可使用逗号、制表符、分号或竖线作为分隔符，程序会自动识别。
 
 必填字段：
 
@@ -54,12 +54,59 @@ go run ./cmd/insight-batch-add-dn --help
 - `data_path`
 - `log_path`
 
-CSV 示例：
+### CSV 格式一：使用 server_type 自动生成模板
 
 ```csv
 insight_addr,cluster_name,server_type,role,dbgroup_name,team_id,ip,port,admin_port,install_user,install_path,data_path,log_path
 10.0.0.10:8444,prod_cluster_a,vm_l,M,group_1,1,10.0.0.41,,5501,nudb1,/data/goldendb/nudb1,/data/goldendb/nudb1/data,/data/goldendb/nudb1/log
+10.0.0.10:8444,prod_cluster_a,vm_l,OS,group_1,1,10.0.0.42,,5501,nudb2,/data/goldendb/nudb2,/data/goldendb/nudb2/data,/data/goldendb/nudb2/log
 ```
+
+普通角色生成 `template_vm_l_dn.json`，`role=OS` 生成 `template_vm_l_dn_OS.json`。
+
+### CSV 格式二：使用 template_name 显式指定模板
+
+`template_name` 与 `server_type` 二选一。显式模板名可以带或不带 `.json` 后缀，程序会在请求中补全 `.json`：
+
+```csv
+insight_addr,cluster_name,template_name,role,dbgroup_id,team_id,ip,port,admin_port,install_user,install_path,data_path,log_path
+10.0.0.10:8444,prod_cluster_a,template_vm_m_dn.json,M,1,1,10.0.0.51,,5501,nudb1,/data/goldendb/nudb1,/data/goldendb/nudb1/data,/data/goldendb/nudb1/log
+10.0.0.10:8444,prod_cluster_a,template_vm_m_dn.json,OS,1,1,10.0.0.52,,5501,nudb2,/data/goldendb/nudb2,/data/goldendb/nudb2/data,/data/goldendb/nudb2/log
+```
+
+当 `role=OS` 时，即使显式填写普通 `_dn.json`，程序也会转换为对应的 `_dn_OS.json`。
+
+### CSV 格式三：使用 dbgroup_name 查询 ID，并使用默认路径
+
+`dbgroup_name` 和 `dbgroup_id` 至少填写一个；不填写路径时，默认值为 `{base-path}/{install_user}`、`{install_path}/data` 和 `{install_path}/log`：
+
+```csv
+insight_addr,cluster_name,server_type,role,dbgroup_name,team_id,ip,admin_port,install_user
+10.0.0.10:8444,prod_cluster_a,vm_l,M,group_1,1,10.0.0.61,5501,nudb1
+10.0.0.10:8444,prod_cluster_a,vm_l,S,group_1,1,10.0.0.62,5502,nudb2
+```
+
+运行时可通过 `--base-path` 修改默认安装路径根目录。
+
+### CSV 格式四：分号分隔
+
+分号可以作为 CSV 列分隔符；此时模板名和路径等字段照常填写，建议将多余可选字段留空：
+
+```csv
+insight_addr;cluster_name;server_type;role;dbgroup_id;team_id;ip;admin_port;install_user;install_path;data_path;log_path
+10.0.0.10:8444;prod_cluster_a;vm_l;M;1;1;10.0.0.71;5501;nudb1;/data/goldendb/nudb1;/data/goldendb/nudb1/data;/data/goldendb/nudb1/log
+```
+
+### CSV 格式五：竖线分隔与引号
+
+竖线也可以作为 CSV 列分隔符。字段值包含当前分隔符时，使用标准 CSV 双引号：
+
+```csv
+insight_addr|cluster_name|template_name|role|dbgroup_id|team_id|ip|admin_port|install_user|install_path|data_path|log_path
+10.0.0.10:8444|prod_cluster_a|template_vm_l_dn.json|M|1|1|10.0.0.81|5501|nudb1|"/data/goldendb/nudb1"|"/data/goldendb/nudb1/data"|"/data/goldendb/nudb1/log"
+```
+
+制表符分隔也受支持，适合从 Excel 等工具导出；其列顺序与逗号分隔示例相同。
 
 ## 参数说明
 
