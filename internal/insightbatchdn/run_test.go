@@ -33,20 +33,36 @@ func TestNormalizeDNRowsRequiresTeamID(t *testing.T) {
 }
 
 func TestBuildDNPayloadUsesDocumentedTemplateFileName(t *testing.T) {
-	payload, err := buildDNPayload(nil, nil, 12, "template_vm_l_dn.json", []dnRow{{
-		DBGroupID: "3", TeamID: "1", IP: "10.0.0.41", Port: "5501", AdminPort: "5502",
+	payload, err := buildDNPayload(nil, nil, 12, []dnRow{{
+		DBGroupID: "3", TeamID: "1", IP: "10.0.0.41", Role: "M", TemplateName: "template_vm_l_dn.json", Port: "5501", AdminPort: "5502",
 	}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	templates := payload["parameterTemplateInfos"].([]map[string]any)
-	if len(templates) != 1 || templates[0]["type"] != "DN" || templates[0]["templateName"] != "template_vm_l_dn.json" {
-		t.Fatalf("unexpected parameterTemplateInfos: %#v", templates)
+	if _, ok := payload["parameterTemplateInfos"]; ok {
+		t.Fatal("parameterTemplateInfos must not be included")
 	}
 	dbGroups := payload["dbgroupList"].([]map[string]any)
 	teamList := dbGroups[0]["teamList"].([]map[string]any)
 	dnList := teamList[0]["dnList"].([]map[string]any)
 	if dnList[0]["port"] != 5501 || dnList[0]["adminPort"] != 5502 {
 		t.Fatalf("unexpected dnList item: %#v", dnList[0])
+	}
+	if dnList[0]["templateName"] != "template_vm_l_dn.json" {
+		t.Fatalf("unexpected node template: %#v", dnList[0]["templateName"])
+	}
+}
+
+func TestBuildDNPayloadUsesOSTemplateOnOSNode(t *testing.T) {
+	payload, err := buildDNPayload(nil, nil, 12, []dnRow{{
+		DBGroupID: "3", TeamID: "1", IP: "10.0.0.42", Role: "OS", TemplateName: "template_vm_l_dn_OS.json",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dbGroups := payload["dbgroupList"].([]map[string]any)
+	dnList := dbGroups[0]["teamList"].([]map[string]any)[0]["dnList"].([]map[string]any)
+	if dnList[0]["templateName"] != "template_vm_l_dn_OS.json" {
+		t.Fatalf("unexpected OS node template: %#v", dnList[0]["templateName"])
 	}
 }

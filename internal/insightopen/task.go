@@ -9,8 +9,15 @@ import (
 )
 
 type PollOptions struct {
-	Interval time.Duration
-	Timeout  time.Duration
+	Interval   time.Duration
+	Timeout    time.Duration
+	OnProgress func(PollProgress)
+}
+
+type PollProgress struct {
+	Attempt int
+	Done    bool
+	Data    map[string]any
 }
 
 func StartInstallTask(ctx context.Context, client *Client, endpoint string, payload any) (string, error) {
@@ -45,7 +52,9 @@ func PollTaskResult(ctx context.Context, client *Client, endpoint, taskID string
 	}
 
 	deadline := time.Now().Add(timeout)
+	attempt := 0
 	for time.Now().Before(deadline) {
+		attempt++
 		var resp APIResponse
 		query := url.Values{}
 		query.Set("taskId", taskID)
@@ -57,7 +66,9 @@ func PollTaskResult(ctx context.Context, client *Client, endpoint, taskID string
 			if err != nil {
 				return nil, err
 			}
-			if toInt(data["totalResult"]) == 1 {
+			done := toInt(data["totalResult"]) == 1
+			notifyPollProgress(options.OnProgress, PollProgress{Attempt: attempt, Done: done, Data: data})
+			if done {
 				return data, nil
 			}
 		}
@@ -69,4 +80,10 @@ func PollTaskResult(ctx context.Context, client *Client, endpoint, taskID string
 		}
 	}
 	return nil, fmt.Errorf("任务轮询超时: taskId=%s", taskID)
+}
+
+func notifyPollProgress(callback func(PollProgress), progress PollProgress) {
+	if callback != nil {
+		callback(progress)
+	}
 }

@@ -29,7 +29,7 @@ type CheckResult struct {
 const (
 	// Physical machine requirements
 	PhysDataAvailMin = 3072 // 3T in GB
-	PhysCPUMin       = 50
+	PhysCPUMin       = 48
 	PhysMemMin       = 200
 
 	// VM requirements

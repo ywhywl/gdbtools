@@ -48,6 +48,33 @@ func ComponentTemplateName(explicit, serverType, component string, caseSensitive
 	return fmt.Sprintf("template_%s_%s.json", serverPart, component), nil
 }
 
+// DNTemplateName resolves the template attached to one DN node. OS nodes use
+// the dedicated dn_OS template, matching insight-batch-create.
+func DNTemplateName(explicit, serverType, role string, caseSensitive bool) (string, error) {
+	role, err := NormalizeRole(role)
+	if err != nil {
+		return "", err
+	}
+	if name := normalizeTemplateName(explicit); name != "" {
+		if role != "OS" {
+			return name, nil
+		}
+		lower := strings.ToLower(name)
+		if strings.HasSuffix(lower, "_dn_os.json") {
+			return name, nil
+		}
+		if strings.HasSuffix(lower, "_dn.json") {
+			return name[:len(name)-len("_dn.json")] + "_dn_OS.json", nil
+		}
+		return name, nil
+	}
+	component := "dn"
+	if role == "OS" {
+		component = "dn_OS"
+	}
+	return ComponentTemplateName("", serverType, component, caseSensitive)
+}
+
 func normalizeTemplateName(name string) string {
 	name = strings.TrimSpace(name)
 	if name != "" && !strings.HasSuffix(strings.ToLower(name), ".json") {

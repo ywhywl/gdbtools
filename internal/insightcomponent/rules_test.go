@@ -22,3 +22,22 @@ func TestComponentTemplateName(t *testing.T) {
 		}
 	}
 }
+
+func TestDNTemplateNameUsesOSTemplate(t *testing.T) {
+	tests := []struct {
+		role       string
+		explicit   string
+		serverType string
+		want       string
+	}{
+		{"M", "", "vm_l", "template_vm_l_dn.json"},
+		{"OS", "", "vm_l", "template_vm_l_dn_OS.json"},
+		{"OS", "template_vm_l_dn.json", "", "template_vm_l_dn_OS.json"},
+	}
+	for _, tt := range tests {
+		got, err := DNTemplateName(tt.explicit, tt.serverType, tt.role, false)
+		if err != nil || got != tt.want {
+			t.Errorf("DNTemplateName(%q, %q, %q) = %q, %v; want %q", tt.explicit, tt.serverType, tt.role, got, err, tt.want)
+		}
+	}
+}

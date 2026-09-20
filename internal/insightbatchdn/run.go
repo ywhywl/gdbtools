@@ -40,6 +40,7 @@ type dnRow struct {
 	APIBase              string
 	ClusterName          string
 	TemplateName         string
+	Role                 string
 	DBGroupName          string
 	DBGroupID            string
 	TeamID               string
@@ -57,10 +58,9 @@ type dnRow struct {
 }
 
 type dnGroup struct {
-	APIBase      string
-	ClusterName  string
-	TemplateName string
-	Rows         []dnRow
+	APIBase     string
+	ClusterName string
+	Rows        []dnRow
 }
 
 func Run(argv []string) (int, error) {
@@ -119,7 +119,7 @@ func Run(argv []string) (int, error) {
 			return 2, err
 		}
 		payloadRows := cloneDNRows(group.Rows)
-		payload, err := buildDNPayload(context.Background(), client, clusterID, group.TemplateName, payloadRows)
+		payload, err := buildDNPayload(context.Background(), client, clusterID, payloadRows)
 		if err != nil {
 			return 2, err
 		}
@@ -127,28 +127,31 @@ func Run(argv []string) (int, error) {
 		if err != nil {
 			return 2, err
 		}
+		log.Printf("[DN] cluster=%s taskId=%s 已提交，开始轮询安装进度", group.ClusterName, taskID)
 		finalData, err := insightopen.PollTaskResult(context.Background(), client, "/open_api/insight/external/install/querybatchAddSlaveDNResult", taskID, insightopen.PollOptions{
 			Interval: time.Duration(parsed.PollInterval) * time.Second,
 			Timeout:  time.Duration(parsed.PollTimeout) * time.Second,
+			OnProgress: func(progress insightopen.PollProgress) {
+				logPollProgress("DN", group.ClusterName, taskID, progress)
+			},
 		})
 		if err != nil {
 			return 2, err
 		}
+		log.Printf("[DN] cluster=%s taskId=%s 安装轮询完成", group.ClusterName, taskID)
 
 		records := toRecords(finalData["records"])
 		groupItems := summarizeDNGroup(records, payloadRows)
 		for _, item := range groupItems {
 			itemResults = append(itemResults, mergeMaps(map[string]any{
-				"insight_addr":  group.APIBase,
-				"cluster_name":  group.ClusterName,
-				"template_name": group.TemplateName,
+				"insight_addr": group.APIBase,
+				"cluster_name": group.ClusterName,
 			}, item))
 		}
 		successCount, failedCount := countStatuses(groupItems)
 		groupResults = append(groupResults, map[string]any{
 			"insight_addr":  group.APIBase,
 			"cluster_name":  group.ClusterName,
-			"template_name": group.TemplateName,
 			"task_id":       taskID,
 			"total":         len(groupItems),
 			"success_count": successCount,
@@ -182,7 +185,11 @@ func normalizeDNRows(rows []map[string]string, args args) ([]dnRow, error) {
 	for i, row := range rows {
 		api := strings.TrimSpace(row["insight_addr"])
 		cluster := strings.TrimSpace(row["cluster_name"])
-		template, err := insightcomponent.ComponentTemplateName(row["template_name"], row["server_type"], "dn", args.CaseSensitive)
+		role, err := insightcomponent.NormalizeRole(row["role"])
+		if err != nil {
+			return nil, fmt.Errorf("第 %d 行: %w", i+1, err)
+		}
+		template, err := insightcomponent.DNTemplateName(row["template_name"], row["server_type"], role, args.CaseSensitive)
 		if err != nil {
 			return nil, fmt.Errorf("第 %d 行: %w", i+1, err)
 		}
@@ -190,7 +197,7 @@ func normalizeDNRows(rows []map[string]string, args args) ([]dnRow, error) {
 		dbgroupName := strings.TrimSpace(row["dbgroup_name"])
 		dbgroupID := strings.TrimSpace(row["dbgroup_id"])
 		if api == "" || cluster == "" || ip == "" {
-			return nil, fmt.Errorf("第 %d 行缺少必填字段 insight_addr/cluster_name/template_name/ip", i+1)
+			return nil, fmt.Errorf("第 %d 行缺少必填字段 insight_addr/cluster_name/ip", i+1)
 		}
 		if dbgroupName == "" && dbgroupID == "" {
 			return nil, fmt.Errorf("第 %d 行缺少 dbgroup_name 或 dbgroup_id", i+1)
@@ -228,6 +235,7 @@ func normalizeDNRows(rows []map[string]string, args args) ([]dnRow, error) {
 			APIBase:              apiBase,
 			ClusterName:          cluster,
 			TemplateName:         template,
+			Role:                 role,
 			DBGroupName:          dbgroupName,
 			DBGroupID:            dbgroupID,
 			TeamID:               teamID,
@@ -251,13 +259,13 @@ func groupDNRows(rows []dnRow) []dnGroup {
 	index := map[string]int{}
 	out := make([]dnGroup, 0)
 	for _, row := range rows {
-		key := row.APIBase + "\x00" + row.ClusterName + "\x00" + row.TemplateName
+		key := row.APIBase + "\x00" + row.ClusterName
 		if pos, ok := index[key]; ok {
 			out[pos].Rows = append(out[pos].Rows, row)
 			continue
 		}
 		index[key] = len(out)
-		out = append(out, dnGroup{APIBase: row.APIBase, ClusterName: row.ClusterName, TemplateName: row.TemplateName, Rows: []dnRow{row}})
+		out = append(out, dnGroup{APIBase: row.APIBase, ClusterName: row.ClusterName, Rows: []dnRow{row}})
 	}
 	return out
 }
@@ -268,7 +276,7 @@ func cloneDNRows(rows []dnRow) []dnRow {
 	return out
 }
 
-func buildDNPayload(ctx context.Context, client *insightopen.Client, clusterID int, templateName string, rows []dnRow) (map[string]any, error) {
+func buildDNPayload(ctx context.Context, client *insightopen.Client, clusterID int, rows []dnRow) (map[string]any, error) {
 	type teamBucket struct {
 		TeamID string
 		Backup string
@@ -332,6 +340,9 @@ func buildDNPayload(ctx context.Context, client *insightopen.Client, clusterID i
 			dnList := make([]map[string]any, 0, len(bucket.Rows))
 			for _, row := range bucket.Rows {
 				dnItem := map[string]any{"ip": row.IP}
+				if row.TemplateName != "" {
+					dnItem["templateName"] = row.TemplateName
+				}
 				if row.Port != "" {
 					dnItem["port"] = mustInt(row.Port)
 				}
@@ -359,12 +370,18 @@ func buildDNPayload(ctx context.Context, client *insightopen.Client, clusterID i
 	}
 
 	return map[string]any{
-		"clusterId": clusterID,
-		"parameterTemplateInfos": []map[string]any{
-			{"type": "DN", "templateName": templateName},
-		},
+		"clusterId":   clusterID,
 		"dbgroupList": dbgroupList,
 	}, nil
+}
+
+func logPollProgress(component, cluster, taskID string, progress insightopen.PollProgress) {
+	data := progress.Data
+	process := firstNonEmpty(toString(data["process"]), toString(data["progress"]))
+	if process == "" {
+		process = "-"
+	}
+	log.Printf("[%s] cluster=%s taskId=%s attempt=%d process=%s totalResult=%v done=%t", component, cluster, taskID, progress.Attempt, process, data["totalResult"], progress.Done)
 }
 
 func summarizeDNGroup(records []map[string]any, rows []dnRow) []map[string]any {

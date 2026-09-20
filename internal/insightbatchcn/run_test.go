@@ -26,7 +26,7 @@ func TestNormalizeCNRowsUsesRoleDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(rows) != 1 || rows[0].TemplateName != "template_vm_l_cn.json" || rows[0].ServicePort != "3308" {
+	if len(rows) != 1 || rows[0].ServicePort != "3308" {
 		t.Fatalf("unexpected role defaults: %#v", rows)
 	}
 	if rows[0].InstallPath != "/data/goldendb/nudbproxy1" {
@@ -61,16 +61,15 @@ func TestParseServicePortsRejectsEmptyItem(t *testing.T) {
 }
 
 func TestBuildCNPayloadUsesDocumentedTemplateFileName(t *testing.T) {
-	payload := buildCNPayload(12, "template_vm_l_cn.json", []cnRow{{
+	payload := buildCNPayload(12, []cnRow{{
 		IP: "10.0.0.31", Port: "5501", InstallUser: "nudbproxy1", InstallPath: "/data/gdb", ServicePort: "3306",
 	}})
 
 	if got := payload["clusterId"]; got != 12 {
 		t.Fatalf("clusterId = %v, want 12", got)
 	}
-	templates := payload["parameterTemplateInfos"].([]map[string]any)
-	if len(templates) != 1 || templates[0]["type"] != "CN" || templates[0]["templateName"] != "template_vm_l_cn.json" {
-		t.Fatalf("unexpected parameterTemplateInfos: %#v", templates)
+	if _, ok := payload["parameterTemplateInfos"]; ok {
+		t.Fatal("parameterTemplateInfos must not be included")
 	}
 	if got := payload["cnList"].([]map[string]any)[0]; got["port"] != 5501 || got["servicePort"] != 3306 {
 		t.Fatalf("unexpected cnList item: %#v", got)

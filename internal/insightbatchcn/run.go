@@ -25,7 +25,6 @@ type args struct {
 	DefaultServicePort    string
 	Prefix                string
 	BasePath              string
-	CaseSensitive         bool
 	AllowRolePortMismatch bool
 	PollInterval          int
 	PollTimeout           int
@@ -46,7 +45,6 @@ func Run(argv []string) (int, error) {
 	fs.StringVar(&parsed.DefaultServicePort, "default-service-port", "", "默认服务端口")
 	fs.StringVar(&parsed.Prefix, "prefix", "nu", "自动生成安装用户名的前缀")
 	fs.StringVar(&parsed.BasePath, "base-path", "/data/goldendb", "自动生成安装路径的根目录")
-	fs.BoolVar(&parsed.CaseSensitive, "case-sensitive", false, "使用大小写敏感模板名")
 	fs.BoolVar(&parsed.AllowRolePortMismatch, "allow-role-port-mismatch", false, "允许 role 与 service_port 不匹配")
 	fs.IntVar(&parsed.PollInterval, "poll-interval", 10, "轮询间隔")
 	fs.IntVar(&parsed.PollTimeout, "poll-timeout", 3600, "轮询超时")
@@ -88,32 +86,35 @@ func Run(argv []string) (int, error) {
 		if err != nil {
 			return 2, err
 		}
-		taskID, err := insightopen.StartInstallTask(context.Background(), client, "/open_api/insight/external/install/batchAddCN", buildCNPayload(clusterID, group.TemplateName, group.Rows))
+		taskID, err := insightopen.StartInstallTask(context.Background(), client, "/open_api/insight/external/install/batchAddCN", buildCNPayload(clusterID, group.Rows))
 		if err != nil {
 			return 2, err
 		}
+		log.Printf("[CN] cluster=%s taskId=%s 已提交，开始轮询安装进度", group.ClusterName, taskID)
 		finalData, err := insightopen.PollTaskResult(context.Background(), client, "/open_api/insight/external/install/querybatchAddCNResult", taskID, insightopen.PollOptions{
 			Interval: time.Duration(parsed.PollInterval) * time.Second,
 			Timeout:  time.Duration(parsed.PollTimeout) * time.Second,
+			OnProgress: func(progress insightopen.PollProgress) {
+				logPollProgress("CN", group.ClusterName, taskID, progress)
+			},
 		})
 		if err != nil {
 			return 2, err
 		}
+		log.Printf("[CN] cluster=%s taskId=%s 安装轮询完成", group.ClusterName, taskID)
 
 		records := toRecords(finalData["records"])
 		groupItems := summarizeCNGroup(records, group.Rows)
 		for _, item := range groupItems {
 			itemResults = append(itemResults, mergeMaps(map[string]any{
-				"insight_addr":  group.APIBase,
-				"cluster_name":  group.ClusterName,
-				"template_name": group.TemplateName,
+				"insight_addr": group.APIBase,
+				"cluster_name": group.ClusterName,
 			}, item))
 		}
 		successCount, failedCount := countStatuses(groupItems)
 		groupResults = append(groupResults, map[string]any{
 			"insight_addr":  group.APIBase,
 			"cluster_name":  group.ClusterName,
-			"template_name": group.TemplateName,
 			"task_id":       taskID,
 			"total":         len(groupItems),
 			"success_count": successCount,
@@ -143,23 +144,21 @@ func Run(argv []string) (int, error) {
 }
 
 type cnRow struct {
-	RowNo        int
-	APIBase      string
-	ClusterName  string
-	TemplateName string
-	IP           string
-	Port         string
-	InstallUser  string
-	InstallPath  string
-	ServicePort  string
-	Role         string
+	RowNo       int
+	APIBase     string
+	ClusterName string
+	IP          string
+	Port        string
+	InstallUser string
+	InstallPath string
+	ServicePort string
+	Role        string
 }
 
 type cnGroup struct {
-	APIBase      string
-	ClusterName  string
-	TemplateName string
-	Rows         []cnRow
+	APIBase     string
+	ClusterName string
+	Rows        []cnRow
 }
 
 func normalizeCNRows(rows []map[string]string, args args) ([]cnRow, error) {
@@ -167,18 +166,13 @@ func normalizeCNRows(rows []map[string]string, args args) ([]cnRow, error) {
 	for i, row := range rows {
 		api := strings.TrimSpace(row["insight_addr"])
 		cluster := strings.TrimSpace(row["cluster_name"])
-		serverType := strings.TrimSpace(row["server_type"])
 		role, err := insightcomponent.NormalizeRole(row["role"])
-		if err != nil {
-			return nil, fmt.Errorf("第 %d 行: %w", i+1, err)
-		}
-		template, err := insightcomponent.ComponentTemplateName(row["template_name"], serverType, "cn", args.CaseSensitive)
 		if err != nil {
 			return nil, fmt.Errorf("第 %d 行: %w", i+1, err)
 		}
 		ip := strings.TrimSpace(row["ip"])
 		if api == "" || cluster == "" || ip == "" {
-			return nil, fmt.Errorf("第 %d 行缺少必填字段 insight_addr/cluster_name/template_name/ip", i+1)
+			return nil, fmt.Errorf("第 %d 行缺少必填字段 insight_addr/cluster_name/ip", i+1)
 		}
 		apiBase, err := insightopen.NormalizeAPIBase(api)
 		if err != nil {
@@ -214,16 +208,15 @@ func normalizeCNRows(rows []map[string]string, args args) ([]cnRow, error) {
 				installPath = insightcomponent.InstallPath(args.BasePath, installUser)
 			}
 			out = append(out, cnRow{
-				RowNo:        i + 1,
-				APIBase:      apiBase,
-				ClusterName:  cluster,
-				TemplateName: template,
-				IP:           ip,
-				Port:         firstNonEmpty(strings.TrimSpace(row["port"]), args.DefaultPort),
-				InstallUser:  installUser,
-				InstallPath:  installPath,
-				ServicePort:  strconv.Itoa(servicePort),
-				Role:         role,
+				RowNo:       i + 1,
+				APIBase:     apiBase,
+				ClusterName: cluster,
+				IP:          ip,
+				Port:        firstNonEmpty(strings.TrimSpace(row["port"]), args.DefaultPort),
+				InstallUser: installUser,
+				InstallPath: installPath,
+				ServicePort: strconv.Itoa(servicePort),
+				Role:        role,
 			})
 		}
 	}
@@ -263,18 +256,18 @@ func groupCNRows(rows []cnRow) []cnGroup {
 	index := map[string]int{}
 	out := make([]cnGroup, 0)
 	for _, row := range rows {
-		key := row.APIBase + "\x00" + row.ClusterName + "\x00" + row.TemplateName
+		key := row.APIBase + "\x00" + row.ClusterName
 		if pos, ok := index[key]; ok {
 			out[pos].Rows = append(out[pos].Rows, row)
 			continue
 		}
 		index[key] = len(out)
-		out = append(out, cnGroup{APIBase: row.APIBase, ClusterName: row.ClusterName, TemplateName: row.TemplateName, Rows: []cnRow{row}})
+		out = append(out, cnGroup{APIBase: row.APIBase, ClusterName: row.ClusterName, Rows: []cnRow{row}})
 	}
 	return out
 }
 
-func buildCNPayload(clusterID int, templateName string, rows []cnRow) map[string]any {
+func buildCNPayload(clusterID int, rows []cnRow) map[string]any {
 	cnList := make([]map[string]any, 0, len(rows))
 	for _, row := range rows {
 		item := map[string]any{"ip": row.IP}
@@ -294,11 +287,17 @@ func buildCNPayload(clusterID int, templateName string, rows []cnRow) map[string
 	}
 	return map[string]any{
 		"clusterId": clusterID,
-		"parameterTemplateInfos": []map[string]any{
-			{"type": "CN", "templateName": templateName},
-		},
-		"cnList": cnList,
+		"cnList":    cnList,
 	}
+}
+
+func logPollProgress(component, cluster, taskID string, progress insightopen.PollProgress) {
+	data := progress.Data
+	process := firstNonEmpty(toString(data["process"]), toString(data["progress"]))
+	if process == "" {
+		process = "-"
+	}
+	log.Printf("[%s] cluster=%s taskId=%s attempt=%d process=%s totalResult=%v done=%t", component, cluster, taskID, progress.Attempt, process, data["totalResult"], progress.Done)
 }
 
 func summarizeCNGroup(records []map[string]any, rows []cnRow) []map[string]any {
